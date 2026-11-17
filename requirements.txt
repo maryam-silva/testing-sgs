@@ -1,5 +1,7 @@
 pytest==8.3.5
 pytest-playwright==0.6.2
 pytest-html==4.1.1
+pytest-rerunfailures==14.0
 playwright==1.49.1
 python-dotenv==1.0.1
+fpdf2==2.8.1

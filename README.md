@@ -1,4 +1,4 @@
-# 🧪 SGS DEV — Playwright Python Automation Testing
+# SGS DEV — Playwright Python Automation Testing
 
 Automation test *end-to-end* (E2E) untuk **SGS** (CMS + website).
 Setiap run otomatis menghasilkan **HTML report** siap review, plus screenshot & log untuk setiap test yang gagal.
