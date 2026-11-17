@@ -279,7 +279,7 @@ def test_article_active_on_web(cms_page: Page, web_page: Page):
     _fill_article_form(cms_page, TITLE, set_inactive=False)
 
     try:
-        web_page.goto(f"{WEB_BASE_URL}/articles")
+        web_page.goto(f"{WEB_BASE_URL}/news")
         web_page.wait_for_load_state("networkidle")
         expect(web_page.get_by_text(TITLE, exact=False)).to_be_visible()
     finally:
@@ -301,7 +301,7 @@ def test_article_inactive_not_on_web(cms_page: Page, web_page: Page):
 
     try:
         # Verifikasi di web
-        web_page.goto(f"{WEB_BASE_URL}/articles")
+        web_page.goto(f"{WEB_BASE_URL}/news")
         web_page.wait_for_load_state("networkidle")
         article_on_web = web_page.get_by_text(TITLE, exact=False)
         expect(article_on_web).not_to_be_visible()
