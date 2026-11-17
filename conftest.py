@@ -28,6 +28,70 @@ _first_errors: dict[str, str] = {}
 # Track attempt count: nodeid -> int
 _attempt_counts: dict[str, int] = {}
 
+# Progress file (set saat session start)
+_progress_path: Path | None = None
+_total_collected: int = 0
+_done_count: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Progress file hooks
+# ---------------------------------------------------------------------------
+
+def pytest_collection_finish(session):
+    """Catat total TC yang dikumpulkan dan buat progress.txt awal."""
+    global _progress_path, _total_collected
+    _total_collected = len(session.items)
+
+    ts = datetime.now().strftime("%d-%m-%Y_%H.%M")
+    report_dir = Path("reports") / ts
+    report_dir.mkdir(parents=True, exist_ok=True)
+    _progress_path = report_dir / "progress.txt"
+
+    with _progress_path.open("w", encoding="utf-8") as f:
+        f.write(f"SGS DEV — Test Progress\n")
+        f.write(f"Started : {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
+        f.write(f"Total TC: {_total_collected}\n")
+        f.write("-" * 60 + "\n")
+
+    print(f"\n[progress] {_progress_path}")
+
+
+def pytest_runtest_logreport(report):
+    """Tulis baris progress ke file setiap TC selesai (fase call saja)."""
+    global _done_count
+    if report.when != "call" or _progress_path is None:
+        return
+
+    _done_count += 1
+
+    status_map = {
+        True:  "PASSED ",
+        False: "FAILED ",
+        None:  "SKIPPED",
+    }
+    if report.passed:
+        status = "PASSED "
+        icon = "[+]"
+    elif report.failed:
+        status = "FAILED "
+        icon = "[!]"
+    else:
+        status = "SKIPPED"
+        icon = "[-]"
+
+    # Bersihkan nodeid jadi lebih pendek: test-scripts/login/test_login.py::test_foo[chromium]
+    short_id = report.nodeid.replace("\\", "/")
+
+    pct = int(_done_count / max(_total_collected, 1) * 100)
+    line = (
+        f"{icon} {_done_count:>3}/{_total_collected}  ({pct:>3}%)  "
+        f"{status}  {short_id}\n"
+    )
+
+    with _progress_path.open("a", encoding="utf-8") as f:
+        f.write(line)
+
 
 # ---------------------------------------------------------------------------
 # Browser context defaults
@@ -196,9 +260,27 @@ def pytest_sessionfinish(session, exitstatus):
     if not _results:
         return
 
-    ts = datetime.now().strftime("%d-%m-%Y_%H.%M")
-    report_dir = Path("reports") / ts
+    # Pakai folder yang sama dengan progress.txt jika sudah dibuat
+    if _progress_path is not None:
+        report_dir = _progress_path.parent
+        ts = report_dir.name
+    else:
+        ts = datetime.now().strftime("%d-%m-%Y_%H.%M")
+        report_dir = Path("reports") / ts
     report_dir.mkdir(parents=True, exist_ok=True)
+
+    # Tulis baris penutup di progress.txt
+    if _progress_path is not None:
+        counts = {"passed": 0, "failed": 0, "skipped": 0, "flaky": 0, "error": 0}
+        for r in _results:
+            counts[r.get("status", "skipped")] = counts.get(r.get("status", "skipped"), 0) + 1
+        with _progress_path.open("a", encoding="utf-8") as f:
+            f.write("-" * 60 + "\n")
+            f.write(f"Finished: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n")
+            f.write(
+                f"Summary : {counts['passed']} passed  {counts['flaky']} flaky  "
+                f"{counts['failed']} failed  {counts['skipped']} skipped\n"
+            )
 
     duration_s = time.time() - _session_start
     started = datetime.fromtimestamp(_session_start).strftime("%d/%m/%Y %H:%M")
