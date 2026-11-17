@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 report.html
 bug/
+reports/
 .env
 *.log
 .pytest_cache/

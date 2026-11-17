@@ -4,14 +4,16 @@ Mencakup list, CRUD, validasi, dan cross-check ke web.
 Semua data test berawalan [AUTO] dan dihapus di teardown.
 """
 
+import re
 import pytest
 from playwright.sync_api import Page, expect
 
 from data.cms_data import auto, SAMPLE_ARTICLE
 from data.config import CMS_BASE_URL, WEB_BASE_URL
 
-ARTICLES_URL = f"{CMS_BASE_URL}/articles"
-ARTICLES_ADD_URL = f"{CMS_BASE_URL}/articles/add"
+ARTICLES_URL = f"{CMS_BASE_URL}/article"
+ARTICLES_ADD_URL = f"{CMS_BASE_URL}/article/create"
+_RE_ARTICLE = re.compile(r"/article")
 
 TITLE = auto("Test Article SGS")
 TITLE_EDITED = auto("Test Article SGS EDITED")
@@ -24,6 +26,17 @@ CONTENT = "Ini konten artikel otomatis dari automation test SGS. Jangan hapus ma
 
 def _go_articles(page: Page):
     page.goto(ARTICLES_URL)
+    page.wait_for_load_state("networkidle")
+
+
+def _click_add(page: Page):
+    """Klik tombol tambah artikel — coba berbagai label yang umum di CMS."""
+    page.locator(
+        "a[href*='create'], a[href*='add'], "
+        "button:has-text('Create'), button:has-text('Add'), "
+        "button:has-text('Tambah'), button:has-text('Buat'), "
+        "a:has-text('Create'), a:has-text('Add'), a:has-text('Tambah')"
+    ).first.click()
     page.wait_for_load_state("networkidle")
 
 
@@ -113,7 +126,7 @@ def _cleanup_article(page: Page, title: str):
 def test_articles_list(cms_page: Page):
     """TP-ART-01: Halaman daftar artikel tampil"""
     _go_articles(cms_page)
-    expect(cms_page).to_have_url(lambda url: "/articles" in url)
+    expect(cms_page).to_have_url(_RE_ARTICLE)
     # Pastikan ada tabel atau daftar konten (bukan halaman error)
     expect(
         cms_page.locator("table, [class*=table], [class*=list], [class*=grid]").first
@@ -125,11 +138,7 @@ def test_articles_list(cms_page: Page):
 def test_create_article(cms_page: Page):
     """TP-ART-02: Buat artikel baru berhasil"""
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     _fill_article_form(cms_page, TITLE)
 
     try:
@@ -145,11 +154,7 @@ def test_edit_article(cms_page: Page):
     """TP-ART-03: Edit artikel berhasil"""
     # Buat dulu
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     _fill_article_form(cms_page, TITLE)
 
     try:
@@ -186,11 +191,7 @@ def test_delete_article(cms_page: Page):
     """TP-ART-04: Hapus artikel berhasil"""
     # Buat dulu
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     _fill_article_form(cms_page, TITLE)
 
     _go_articles(cms_page)
@@ -206,11 +207,7 @@ def test_delete_article(cms_page: Page):
 def test_create_article_empty_title(cms_page: Page):
     """TP-ART-05: Simpan artikel tanpa judul gagal"""
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     cms_page.wait_for_load_state("networkidle")
 
     # Pastikan judul kosong, langsung simpan
@@ -230,11 +227,7 @@ def test_create_article_empty_title(cms_page: Page):
 def test_create_article_no_category(cms_page: Page):
     """TP-ART-06: Simpan artikel tanpa kategori gagal"""
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     cms_page.wait_for_load_state("networkidle")
 
     # Isi judul dan konten, tapi pastikan kategori kosong/default
@@ -270,11 +263,7 @@ def test_create_article_no_category(cms_page: Page):
 def test_article_active_on_web(cms_page: Page, web_page: Page):
     """TP-ART-07: Artikel status Active tampil di web"""
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     # Buat artikel dengan status Active (set_inactive=False)
     _fill_article_form(cms_page, TITLE, set_inactive=False)
 
@@ -292,11 +281,7 @@ def test_article_inactive_not_on_web(cms_page: Page, web_page: Page):
     """TP-ART-08: Artikel Inactive tidak tampil di web"""
     # Buat artikel status Inactive
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     _fill_article_form(cms_page, TITLE, set_inactive=True)
 
     try:
@@ -314,17 +299,13 @@ def test_create_article_special_chars_title(cms_page: Page):
     """Edge: Judul artikel dengan karakter khusus tersimpan aman (tidak XSS)"""
     special_title = auto("Article <script>alert(1)</script> & 'test'")
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
+    _click_add(cms_page)
     _fill_article_form(cms_page, special_title, set_inactive=True)
 
     try:
         _go_articles(cms_page)
         # Halaman harus tetap normal (tidak ada alert/script executed)
-        expect(cms_page).to_have_url(lambda url: "/articles" in url)
+        expect(cms_page).to_have_url(_RE_ARTICLE)
         # Script tag tidak boleh ter-execute — cek tidak ada dialog aktif
         expect(cms_page.locator("dialog[open]")).to_have_count(0)
     finally:
@@ -336,12 +317,7 @@ def test_create_article_very_long_title(cms_page: Page):
     """Edge: Judul artikel sangat panjang ditolak atau dipotong"""
     long_title = auto("A" * 300)
     _go_articles(cms_page)
-    cms_page.get_by_role("link", name="Add").or_(
-        cms_page.get_by_role("button", name="Add")
-    ).or_(
-        cms_page.get_by_role("link", name="Tambah")
-    ).first.click()
-    cms_page.wait_for_load_state("networkidle")
+    _click_add(cms_page)
 
     title_input = cms_page.get_by_label("Title", exact=False).first
     title_input.fill(long_title)
@@ -351,6 +327,6 @@ def test_create_article_very_long_title(cms_page: Page):
 
     # Ekspektasi: validasi error ATAU tersimpan dengan judul terpotong
     # Pastikan tidak crash (halaman masih valid)
-    expect(cms_page).to_have_url(lambda url: "sgs" in url or "localhost" in url)
+    expect(cms_page).to_have_url(re.compile(r"sgs-cms-dev"))
     # Cleanup jika tersimpan
     _cleanup_article(cms_page, auto("A" * 100))
