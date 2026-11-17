@@ -62,14 +62,12 @@ def pytest_runtest_logreport(report):
     global _done_count
     if report.when != "call" or _progress_path is None:
         return
+    # Lewati intermediate rerun (outcome == "rerun") — bukan hasil final
+    if report.outcome not in ("passed", "failed", "skipped"):
+        return
 
     _done_count += 1
 
-    status_map = {
-        True:  "PASSED ",
-        False: "FAILED ",
-        None:  "SKIPPED",
-    }
     if report.passed:
         status = "PASSED "
         icon = "[+]"
