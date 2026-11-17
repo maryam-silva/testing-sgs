@@ -319,11 +319,22 @@ class SGSReport(FPDF):
         # ── Stat cards ────────────────────────────────────────────────────────
         y_cards = self.get_y()
         card_w = pw / 4
-        card_h = 24
-        STRIPE_H = 3  # colored top stripe per card
+        card_h = 22       # tinggi tiap stat card kanan
+        GAP = 3           # jarak antar baris kanan
+        STRIPE_H = 3      # tinggi stripe warna di atas card
+
+        # pass_card_h harus sama dengan 2 baris kanan + gap
+        pass_card_w = card_w * 1.5
+        pass_card_h = card_h * 2 + GAP   # = 47mm
+
+        # Offset absolut konten dalam pass rate card (relatif ke y_cards)
+        PR_LABEL = STRIPE_H + 2          # = 5   → label "PASS RATE"
+        PR_NUM   = STRIPE_H + 10         # = 13  → angka besar %
+        PR_SUB   = STRIPE_H + 24         # = 27  → "X dari Y lulus"
+        PR_BAR   = STRIPE_H + 30         # = 33  → progress bar
+        PR_LEG   = STRIPE_H + 36         # = 39  → legend dots
 
         def stat_card(x, y, label, value, color):
-            # Card background + border
             self._set_fill(C_WHITE)
             self._set_draw(C_GRAY_LIGHT)
             self.set_line_width(0.5)
@@ -331,7 +342,7 @@ class SGSReport(FPDF):
             # Colored top stripe
             self._set_fill(color)
             self.rect(x, y, card_w - 2, STRIPE_H, style="F")
-            # Colored dot + label
+            # Dot + label
             self._set_fill(color)
             self.ellipse(x + 3, y + STRIPE_H + 3, 2.5, 2.5, style="F")
             self.set_xy(x + 7, y + STRIPE_H + 2)
@@ -341,80 +352,80 @@ class SGSReport(FPDF):
             # Value number
             self.set_xy(x + 3, y + STRIPE_H + 8)
             self._set_text(C_BLACK)
-            self.set_font(self.FONT, "B", 17)
-            self.cell(card_w - 6, 10, str(value), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.set_font(self.FONT, "B", 16)
+            self.cell(card_w - 6, 9, str(value), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self._set_text(C_BLACK)
 
-        # Pass rate card (wider)
-        pass_card_w = card_w * 1.5
-        pass_card_h = card_h * 1.3
+        # ── Pass rate card ────────────────────────────────────────────────────
         pass_color = C_FAIL if counts["failed"] > 0 else C_PASS
         self._set_fill(C_WHITE)
         self._set_draw(C_GRAY_LIGHT)
         self.set_line_width(0.5)
         self.rect(self.l_margin, y_cards, pass_card_w - 2, pass_card_h, style="FD")
-        # Top stripe for pass rate card (green if all pass, red if any fail)
+        # Top stripe
         self._set_fill(pass_color)
         self.rect(self.l_margin, y_cards, pass_card_w - 2, STRIPE_H, style="F")
 
-        # "PASS RATE" label with dot
+        # Dot + "PASS RATE" label
         self._set_fill(pass_color)
-        self.ellipse(self.l_margin + 3, y_cards + STRIPE_H + 3, 2.5, 2.5, style="F")
-        self.set_xy(self.l_margin + 7, y_cards + STRIPE_H + 2)
+        self.ellipse(self.l_margin + 3, y_cards + PR_LABEL + 1, 2.5, 2.5, style="F")
+        self.set_xy(self.l_margin + 7, y_cards + PR_LABEL)
         self._set_text(C_GRAY_TEXT)
         self.set_font(self.FONT, "", 7)
-        self.cell(0, 4, "PASS RATE", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(pass_card_w - 40, 5, "PASS RATE",
+                  new_x=XPos.RIGHT, new_y=YPos.TOP)
 
-        # FAILED badge (prominent, shown only when failures exist)
+        # FAILED badge (right side, same row as label)
         if counts["failed"] > 0:
             badge_x = self.l_margin + pass_card_w - 2 - 28
             self._set_fill(C_FAIL)
-            self.rect(badge_x, y_cards + STRIPE_H + 2, 26, 6, style="F")
-            self.set_xy(badge_x, y_cards + STRIPE_H + 2)
+            self.rect(badge_x, y_cards + PR_LABEL, 26, 5, style="F")
+            self.set_xy(badge_x, y_cards + PR_LABEL)
             self._set_text(C_WHITE)
             self.set_font(self.FONT, "B", 7)
-            self.cell(26, 6, f"FAILED {counts['failed']}", border=0,
-                      align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.cell(26, 5, f"FAILED {counts['failed']}", align="C",
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self._set_text(C_BLACK)
 
-        # Rate number
-        self.set_xy(self.l_margin + 3, y_cards + STRIPE_H + 9)
+        # Rate number (font 24, h=11 → ends at PR_NUM+11=24)
+        self.set_xy(self.l_margin + 3, y_cards + PR_NUM)
         self._set_text(C_BLACK)
-        self.set_font(self.FONT, "B", 26)
-        self.cell(0, 13, f"{rate:.1f}%", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_font(self.FONT, "B", 24)
+        self.cell(pass_card_w - 6, 11, f"{rate:.1f}%",
+                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+        # Sub-text (starts at PR_SUB=27, h=4 → ends at 31)
         executed = total - counts["skipped"]
         ok = counts["passed"] + counts["flaky"]
-        self.set_xy(self.l_margin + 3, y_cards + STRIPE_H + 23)
+        self.set_xy(self.l_margin + 3, y_cards + PR_SUB)
         self._set_text(C_GRAY_TEXT)
         self.set_font(self.FONT, "", 7)
-        self.cell(0, 4, f"{ok} dari {executed} test yang dieksekusi lulus",
+        self.cell(pass_card_w - 6, 4,
+                  f"{ok} dari {executed} test yang dieksekusi lulus",
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self._set_text(C_BLACK)
 
-        # Progress bar
-        bar_y = y_cards + pass_card_h - 8
+        # Progress bar (starts at PR_BAR=33, h=3 → ends at 36)
         bar_w = pass_card_w - 10
-        bar_h = 4
+        bar_h = 3
         segments = [
             (counts["passed"], C_PASS),
             (counts["flaky"], C_FLAKY),
             (counts["failed"], C_FAIL),
             (counts["skipped"], C_SKIP),
         ]
-        # Bar background (gray track)
         self._set_fill(C_GRAY_LIGHT)
-        self.rect(self.l_margin + 3, bar_y, bar_w, bar_h, style="F")
+        self.rect(self.l_margin + 3, y_cards + PR_BAR, bar_w, bar_h, style="F")
         bx = self.l_margin + 3
         for cnt, color in segments:
             if executed > 0 and cnt > 0:
                 w = bar_w * cnt / max(executed, 1)
                 self._set_fill(color)
-                self.rect(bx, bar_y, w, bar_h, style="F")
+                self.rect(bx, y_cards + PR_BAR, w, bar_h, style="F")
                 bx += w
 
-        # Legend below bar
-        leg_y = bar_y + bar_h + 2
-        self.set_xy(self.l_margin + 3, leg_y)
+        # Legend (starts at PR_LEG=39, h=4 → ends at 43 < pass_card_h=47)
+        self.set_xy(self.l_margin + 3, y_cards + PR_LEG)
         legend_items = [
             ("Passed", C_PASS, counts["passed"]),
             ("Flaky", C_FLAKY, counts["flaky"]),
@@ -423,34 +434,32 @@ class SGSReport(FPDF):
         ]
         for lab, color, cnt in legend_items:
             self._set_fill(color)
-            self.ellipse(self.get_x(), self.get_y() + 1.2, 2.5, 2.5, style="F")
+            self.ellipse(self.get_x(), self.get_y() + 1, 2.5, 2.5, style="F")
             self.set_x(self.get_x() + 3.5)
             self._set_text(C_GRAY_TEXT)
             self.set_font(self.FONT, "", 7)
-            self.cell(22, 4, f"{lab} {cnt}",
-                      new_x=XPos.RIGHT, new_y=YPos.TOP)
+            self.cell(22, 4, f"{lab} {cnt}", new_x=XPos.RIGHT, new_y=YPos.TOP)
             self._set_text(C_BLACK)
 
-        # Right stat cards (3×2 grid)
-        right_x = self.l_margin + pass_card_w
-        cx = right_x
+        # ── Right stat cards (3×2 grid) ───────────────────────────────────────
+        cx = self.l_margin + pass_card_w
         stat_items = [
             ("TOTAL TEST", total, C_GRAY_MID),
-            ("PASSED", counts["passed"], C_PASS),
-            ("FLAKY", counts["flaky"], C_FLAKY),
-            ("FAILED", counts["failed"], C_FAIL),
-            ("ERROR", counts["error"], C_ERROR),
+            ("PASSED",  counts["passed"],  C_PASS),
+            ("FLAKY",   counts["flaky"],   C_FLAKY),
+            ("FAILED",  counts["failed"],  C_FAIL),
+            ("ERROR",   counts["error"],   C_ERROR),
             ("SKIPPED", counts["skipped"], C_SKIP),
         ]
+        row2_y = y_cards + card_h + GAP
         positions = [
-            (cx, y_cards), (cx + card_w, y_cards), (cx + card_w * 2, y_cards),
-            (cx, y_cards + card_h + 2), (cx + card_w, y_cards + card_h + 2),
-            (cx + card_w * 2, y_cards + card_h + 2),
+            (cx,              y_cards), (cx + card_w,     y_cards), (cx + card_w * 2, y_cards),
+            (cx,              row2_y),  (cx + card_w,     row2_y),  (cx + card_w * 2, row2_y),
         ]
         for (sx, sy), (lab, val, col) in zip(positions, stat_items):
             stat_card(sx, sy, lab, val, col)
 
-        self.set_y(y_cards + card_h * 2 + 10)
+        self.set_y(y_cards + pass_card_h + 6)
 
         # Meta table
         meta_rows = [
