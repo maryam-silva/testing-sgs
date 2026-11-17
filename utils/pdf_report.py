@@ -1,7 +1,4 @@
 """
-PDF Report Generator — SGS DEV Automation Testing.
-Mengikuti struktur report MedEasy (layout sama, warna disesuaikan dengan brand SGS).
-
 Jalankan manual untuk re-generate PDF tanpa ulang test:
     python -m utils.pdf_report reports/<DD-MM-YYYY_HH.MM>/results.json
 """
@@ -62,6 +59,32 @@ PRIORITY_COLOR = {
     "3 - low": C_PASS,
     "low": C_PASS,
 }
+
+
+# ---------------------------------------------------------------------------
+# Unicode sanitizer (Helvetica hanya support Latin-1)
+# ---------------------------------------------------------------------------
+
+_UNICODE_MAP = {
+    "’": "'", "‘": "'", "“": '"', "”": '"',
+    "–": "-", "—": "--", "…": "...",
+    "→": "->", "←": "<-", "•": "*",
+    "●": "*",   # ●
+    "■": "#",   # ■
+    "▶": ">",   # ▶
+    "✔": "v",   # ✓
+    "✘": "x",   # ✗
+}
+
+
+def _safe(text: str) -> str:
+    """Ganti karakter Unicode umum lalu strip sisanya ke Latin-1."""
+    if not isinstance(text, str):
+        text = str(text)
+    for src, dst in _UNICODE_MAP.items():
+        text = text.replace(src, dst)
+    # Strip emoji dan karakter non-Latin-1 lainnya
+    return text.encode("latin-1", errors="ignore").decode("latin-1")
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +153,14 @@ class SGSReport(FPDF):
         self.meta = meta
         self.set_auto_page_break(auto=True, margin=12)
         self.set_margins(12, 12, 12)
+
+    # -- unicode-safe wrappers --
+
+    def cell(self, w=0, h=0, txt="", **kwargs):
+        return super().cell(w, h, _safe(txt), **kwargs)
+
+    def multi_cell(self, w, h, txt="", **kwargs):
+        return super().multi_cell(w, h, _safe(txt), **kwargs)
 
     # -- helpers --
 
