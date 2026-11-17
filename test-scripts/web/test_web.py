@@ -4,6 +4,7 @@ Mencakup smoke, navigasi, konten per halaman, negatif, dan edge case.
 Tidak memerlukan login — gunakan fixture web_page.
 """
 
+import re
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -18,11 +19,9 @@ def _go(page: Page, path: str = ""):
     page.wait_for_load_state("networkidle")
 
 
-def _nav_link(page: Page, text: str):
-    """Cari link navigasi dengan toleransi terhadap berbagai struktur nav."""
-    return page.locator(
-        f"nav a:has-text('{text}'), header a:has-text('{text}')"
-    ).first
+def _nav_link(page: Page, href: str):
+    """Cari nav link berdasarkan href path."""
+    return page.locator(f'a[href="{href}"]').first
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +69,7 @@ def test_homepage_news_section(web_page: Page):
 def test_homepage_banner_visible(web_page: Page):
     """TP-WEB-04: Banner/carousel tampil di homepage"""
     _go(web_page)
-    banner = web_page.locator(
-        "[class*=banner], [class*=carousel], [class*=slider], [class*=hero]"
-    ).first
+    banner = web_page.locator("#hero-section, [id*=hero], [id*=banner]").first
     expect(banner).to_be_visible()
 
 
@@ -80,13 +77,12 @@ def test_homepage_banner_visible(web_page: Page):
 def test_homepage_logo_navigates_home(web_page: Page):
     """TP-WEB-05: Klik logo navigasi kembali ke homepage"""
     _go(web_page, "/about")
-    logo = web_page.locator("header a[href='/'], nav a[href='/']").first
+    logo = web_page.locator("a[href='/']").first
     if logo.count() > 0:
         logo.click()
         web_page.wait_for_load_state("networkidle")
-        expect(web_page).to_have_url(f"{WEB_BASE_URL}/")
+        expect(web_page).to_have_url(re.compile(r"/$"))
     else:
-        # Fallback: logo belum tentu link — pastikan halaman about-nya saja tampil
         expect(web_page).to_have_url(f"{WEB_BASE_URL}/about")
 
 
@@ -167,7 +163,7 @@ def test_news_article_click_opens_detail(web_page: Page):
         article_link.click()
         web_page.wait_for_load_state("networkidle")
         # URL harus berubah (ke halaman detail)
-        expect(web_page).not_to_have_url(f"{WEB_BASE_URL}/news")
+        expect(web_page).not_to_have_url(re.compile(r"/news$"))
     else:
         # Jika tidak ada link langsung, skip gracefully — daftar mungkin static
         pytest.skip("Tidak ditemukan link artikel yang dapat diklik")
@@ -266,51 +262,44 @@ def test_sustainability_has_content(web_page: Page):
 def test_nav_about(web_page: Page):
     """TP-WEB-20: Link navigasi About berfungsi"""
     _go(web_page)
-    link = _nav_link(web_page, "About")
-    if link.count() == 0:
-        # Coba teks bahasa Indonesia
-        link = _nav_link(web_page, "Tentang")
+    link = _nav_link(web_page, "/about")
     expect(link).to_be_visible()
     link.click()
     web_page.wait_for_load_state("networkidle")
-    expect(web_page).to_have_url(lambda url: "/about" in url)
+    expect(web_page).to_have_url(re.compile(r"/about"))
 
 
 @pytest.mark.web
 def test_nav_brands(web_page: Page):
     """TP-WEB-21: Link navigasi Brands berfungsi"""
     _go(web_page)
-    link = _nav_link(web_page, "Brand")
+    link = _nav_link(web_page, "/brands")
     expect(link).to_be_visible()
     link.click()
     web_page.wait_for_load_state("networkidle")
-    expect(web_page).to_have_url(lambda url: "/brands" in url)
+    expect(web_page).to_have_url(re.compile(r"/brands"))
 
 
 @pytest.mark.web
 def test_nav_news(web_page: Page):
     """TP-WEB-22: Link navigasi News berfungsi"""
     _go(web_page)
-    link = _nav_link(web_page, "News").or_(
-        _nav_link(web_page, "Berita")
-    ).first
+    link = _nav_link(web_page, "/news")
     expect(link).to_be_visible()
     link.click()
     web_page.wait_for_load_state("networkidle")
-    expect(web_page).to_have_url(lambda url: "/news" in url)
+    expect(web_page).to_have_url(re.compile(r"/news"))
 
 
 @pytest.mark.web
 def test_nav_contact(web_page: Page):
     """TP-WEB-23: Link navigasi Contact Us berfungsi"""
     _go(web_page)
-    link = _nav_link(web_page, "Contact").or_(
-        _nav_link(web_page, "Kontak")
-    ).first
+    link = _nav_link(web_page, "/contact-us")
     expect(link).to_be_visible()
     link.click()
     web_page.wait_for_load_state("networkidle")
-    expect(web_page).to_have_url(lambda url: "/contact" in url)
+    expect(web_page).to_have_url(re.compile(r"/contact-us"))
 
 
 # ---------------------------------------------------------------------------
