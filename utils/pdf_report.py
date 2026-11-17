@@ -173,6 +173,29 @@ class SGSReport(FPDF):
     def _set_draw(self, color: tuple):
         self.set_draw_color(*color)
 
+    def _logo_mark(self, x: float, y: float, r: float = 8):
+        """Draw SGS logo image, fallback to circle mark if file missing."""
+        import os
+        logo_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data", "assets", "logo.png"
+        )
+        if os.path.exists(logo_path):
+            # logo rasio ~3.78:1 (4460×1178), tampilkan dengan tinggi r*2
+            logo_h = r * 2
+            logo_w = logo_h * 3.78
+            self.image(logo_path, x=x, y=y, w=logo_w, h=logo_h)
+        else:
+            # fallback: circle primitif
+            self._set_fill(C_RED)
+            self.ellipse(x, y, r * 2, r * 2, style="F")
+            self.set_xy(x - 1, y + r * 0.42)
+            self._set_text(C_WHITE)
+            self.set_font(self.FONT, "B", int(r * 1.3))
+            self.cell(r * 2 + 2, r * 0.9, "SGS", align="C",
+                      new_x=XPos.RIGHT, new_y=YPos.TOP)
+            self._set_text(C_BLACK)
+
     def section_badge(self, number: int, title: str):
         self._set_fill(C_RED)
         self._set_text(C_WHITE)
@@ -210,7 +233,7 @@ class SGSReport(FPDF):
         self._set_text(C_GRAY_TEXT)
         project = self.meta.get("project", self.PROJECT)
         ts = self.meta.get("timestamp", "")
-        self.cell(0, 5, f"■  {project} · Automation Test Report · {ts}",
+        self.cell(0, 5, f"[SGS] {project} · Automation Test Report · {ts}",
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self._set_draw(C_GRAY_LIGHT)
         self.set_line_width(0.2)
@@ -235,107 +258,133 @@ class SGSReport(FPDF):
         rate = _pass_rate(results)
         total = len(results)
 
-        # Top bar
-        self._set_fill(C_BG)
-        self.rect(self.l_margin, 12, pw, 24, style="F")
+        # ── Full-width header bar (C_OLIVE dark background) ──────────────────
+        BAR_H = 32
+        self._set_fill(C_OLIVE)
+        self.rect(0, 0, self.w, BAR_H, style="F")
 
-        # Logo area
-        self.set_xy(self.l_margin + 3, 15)
-        self._set_text(C_RED)
-        self.set_font(self.FONT, "B", 14)
-        self.cell(60, 7, meta.get("project", self.PROJECT),
-                  new_x=XPos.RIGHT, new_y=YPos.TOP)
-        self._set_text(C_GRAY_TEXT)
-        self.set_font(self.FONT, "", 8)
-        self.set_xy(self.l_margin + 3, 23)
-        self.cell(60, 5, "QA Automation · QBIT",
+        # Thin red accent stripe at bottom of header bar
+        self._set_fill(C_RED)
+        self.rect(0, BAR_H - 2, self.w, 2, style="F")
+
+        # Logo image + subtitle
+        LOGO_X = self.l_margin + 2
+        LOGO_Y = 8
+        LOGO_H = 12   # tinggi logo mm
+        LOGO_W = LOGO_H * 3.78  # ~45mm
+        self._logo_mark(LOGO_X, LOGO_Y, r=LOGO_H / 2)
+
+        self.set_xy(LOGO_X, LOGO_Y + LOGO_H + 1)
+        self._set_text(C_GRAY_LIGHT)
+        self.set_font(self.FONT, "", 7)
+        self.cell(LOGO_W + 4, 4, "QA Automation · QBIT",
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        # Date chip (top-right)
-        chip_x = self.w - self.r_margin - 55
+        # Date chip (top-right inside header)
+        chip_w = 60
+        chip_x = self.w - self.r_margin - chip_w
         self._set_fill(C_RED)
-        self.rect(chip_x, 12, 55, 24, style="F")
-        self.set_xy(chip_x + 2, 14)
+        self.rect(chip_x, 4, chip_w, 24, style="F")
+        self.set_xy(chip_x + 3, 6)
         self._set_text(C_WHITE)
         self.set_font(self.FONT, "", 7)
-        self.cell(51, 5, "Dijalankan", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_xy(chip_x + 2, 19)
+        self.cell(chip_w - 6, 5, "Dijalankan", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_xy(chip_x + 3, 11)
         self.set_font(self.FONT, "B", 10)
         ts = meta.get("timestamp", "").replace("_", " ")
-        self.cell(51, 6, ts, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_xy(chip_x + 2, 27)
-        self._set_fill(C_WHITE)
-        self._set_text(C_RED)
+        self.cell(chip_w - 6, 6, ts, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_xy(chip_x + 3, 19)
+        self._set_fill((180, 10, 20))
+        self._set_text(C_WHITE)
         self.set_font(self.FONT, "B", 8)
-        self.cell(51, 5, meta.get("environment", "development"), border=0,
-                  align="C", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        env_text = meta.get("environment", "development").upper()
+        self.cell(chip_w - 6, 5, env_text, border=0, align="C", fill=True,
+                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         self._set_text(C_BLACK)
 
-        # Title
-        self.set_xy(self.l_margin, 38)
+        # ── Title section ─────────────────────────────────────────────────────
+        self.set_xy(self.l_margin, BAR_H + 4)
         self._set_text(C_RED)
         self.set_font(self.FONT, "B", 22)
         self.cell(0, 10, "Automation Test Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self._set_text(C_GRAY_TEXT)
         self.set_font(self.FONT, "", 10)
         env = meta.get("environment", "development")
-        self.cell(0, 6, f"{meta.get('project', self.PROJECT)} · Environment {env}",
+        self.cell(0, 5, f"{meta.get('project', self.PROJECT)} · Environment {env}",
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self._set_text(C_BLACK)
         self.ln(3)
 
-        # Stat cards
+        # ── Stat cards ────────────────────────────────────────────────────────
         y_cards = self.get_y()
         card_w = pw / 4
-        card_h = 22
+        card_h = 24
+        STRIPE_H = 3  # colored top stripe per card
 
         def stat_card(x, y, label, value, color):
-            self._set_fill(C_BG)
+            # Card background + border
+            self._set_fill(C_WHITE)
             self._set_draw(C_GRAY_LIGHT)
-            self.set_line_width(0.3)
+            self.set_line_width(0.5)
             self.rect(x, y, card_w - 2, card_h, style="FD")
-            # dot
+            # Colored top stripe
             self._set_fill(color)
-            self.ellipse(x + 3, y + 4, 3, 3, style="F")
-            self.set_xy(x + 8, y + 2)
+            self.rect(x, y, card_w - 2, STRIPE_H, style="F")
+            # Colored dot + label
+            self._set_fill(color)
+            self.ellipse(x + 3, y + STRIPE_H + 3, 2.5, 2.5, style="F")
+            self.set_xy(x + 7, y + STRIPE_H + 2)
             self._set_text(C_GRAY_TEXT)
             self.set_font(self.FONT, "", 7)
             self.cell(card_w - 10, 5, label, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            self.set_xy(x + 3, y + 8)
+            # Value number
+            self.set_xy(x + 3, y + STRIPE_H + 8)
             self._set_text(C_BLACK)
-            self.set_font(self.FONT, "B", 18)
+            self.set_font(self.FONT, "B", 17)
             self.cell(card_w - 6, 10, str(value), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self._set_text(C_BLACK)
 
         # Pass rate card (wider)
         pass_card_w = card_w * 1.5
-        self._set_fill(C_BG)
+        pass_card_h = card_h * 1.3
+        pass_color = C_FAIL if counts["failed"] > 0 else C_PASS
+        self._set_fill(C_WHITE)
         self._set_draw(C_GRAY_LIGHT)
-        self.set_line_width(0.3)
-        self.rect(self.l_margin, y_cards, pass_card_w - 2, card_h * 1.3, style="FD")
-        self.set_xy(self.l_margin + 3, y_cards + 2)
+        self.set_line_width(0.5)
+        self.rect(self.l_margin, y_cards, pass_card_w - 2, pass_card_h, style="FD")
+        # Top stripe for pass rate card (green if all pass, red if any fail)
+        self._set_fill(pass_color)
+        self.rect(self.l_margin, y_cards, pass_card_w - 2, STRIPE_H, style="F")
+
+        # "PASS RATE" label with dot
+        self._set_fill(pass_color)
+        self.ellipse(self.l_margin + 3, y_cards + STRIPE_H + 3, 2.5, 2.5, style="F")
+        self.set_xy(self.l_margin + 7, y_cards + STRIPE_H + 2)
         self._set_text(C_GRAY_TEXT)
         self.set_font(self.FONT, "", 7)
         self.cell(0, 4, "PASS RATE", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        # Rate badge if any failed
+        # FAILED badge (prominent, shown only when failures exist)
         if counts["failed"] > 0:
-            self.set_xy(pass_card_w, y_cards + 2)
+            badge_x = self.l_margin + pass_card_w - 2 - 28
             self._set_fill(C_FAIL)
+            self.rect(badge_x, y_cards + STRIPE_H + 2, 26, 6, style="F")
+            self.set_xy(badge_x, y_cards + STRIPE_H + 2)
             self._set_text(C_WHITE)
             self.set_font(self.FONT, "B", 7)
-            self.cell(18, 5, "● FAILED", border=0, fill=True, align="C",
-                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.cell(26, 6, f"FAILED {counts['failed']}", border=0,
+                      align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self._set_text(C_BLACK)
 
-        self.set_xy(self.l_margin + 3, y_cards + 7)
+        # Rate number
+        self.set_xy(self.l_margin + 3, y_cards + STRIPE_H + 9)
         self._set_text(C_BLACK)
-        self.set_font(self.FONT, "B", 24)
-        self.cell(0, 12, f"{rate:.1f}%", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_font(self.FONT, "B", 26)
+        self.cell(0, 13, f"{rate:.1f}%", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         executed = total - counts["skipped"]
         ok = counts["passed"] + counts["flaky"]
-        self.set_xy(self.l_margin + 3, y_cards + 20)
+        self.set_xy(self.l_margin + 3, y_cards + STRIPE_H + 23)
         self._set_text(C_GRAY_TEXT)
         self.set_font(self.FONT, "", 7)
         self.cell(0, 4, f"{ok} dari {executed} test yang dieksekusi lulus",
@@ -343,16 +392,18 @@ class SGSReport(FPDF):
         self._set_text(C_BLACK)
 
         # Progress bar
-        bar_y = y_cards + 25
-        bar_w = pass_card_w - 8
-        bar_h = 3
-        self.set_xy(self.l_margin + 3, bar_y)
+        bar_y = y_cards + pass_card_h - 8
+        bar_w = pass_card_w - 10
+        bar_h = 4
         segments = [
             (counts["passed"], C_PASS),
             (counts["flaky"], C_FLAKY),
             (counts["failed"], C_FAIL),
             (counts["skipped"], C_SKIP),
         ]
+        # Bar background (gray track)
+        self._set_fill(C_GRAY_LIGHT)
+        self.rect(self.l_margin + 3, bar_y, bar_w, bar_h, style="F")
         bx = self.l_margin + 3
         for cnt, color in segments:
             if executed > 0 and cnt > 0:
@@ -361,8 +412,8 @@ class SGSReport(FPDF):
                 self.rect(bx, bar_y, w, bar_h, style="F")
                 bx += w
 
-        # Legend
-        leg_y = bar_y + 5
+        # Legend below bar
+        leg_y = bar_y + bar_h + 2
         self.set_xy(self.l_margin + 3, leg_y)
         legend_items = [
             ("Passed", C_PASS, counts["passed"]),
@@ -372,15 +423,15 @@ class SGSReport(FPDF):
         ]
         for lab, color, cnt in legend_items:
             self._set_fill(color)
-            self.ellipse(self.get_x(), self.get_y() + 1, 2, 2, style="F")
-            self.set_x(self.get_x() + 3)
+            self.ellipse(self.get_x(), self.get_y() + 1.2, 2.5, 2.5, style="F")
+            self.set_x(self.get_x() + 3.5)
             self._set_text(C_GRAY_TEXT)
             self.set_font(self.FONT, "", 7)
-            self.cell(20, 4, f"{lab} {cnt}",
+            self.cell(22, 4, f"{lab} {cnt}",
                       new_x=XPos.RIGHT, new_y=YPos.TOP)
             self._set_text(C_BLACK)
 
-        # Right stat cards
+        # Right stat cards (3×2 grid)
         right_x = self.l_margin + pass_card_w
         cx = right_x
         stat_items = [
@@ -399,7 +450,7 @@ class SGSReport(FPDF):
         for (sx, sy), (lab, val, col) in zip(positions, stat_items):
             stat_card(sx, sy, lab, val, col)
 
-        self.set_y(y_cards + card_h * 2 + 8)
+        self.set_y(y_cards + card_h * 2 + 10)
 
         # Meta table
         meta_rows = [
@@ -511,6 +562,55 @@ class SGSReport(FPDF):
                           new_x=XPos.RIGHT, new_y=YPos.TOP)
             self._set_text(C_BLACK)
             self.ln(5)
+
+    def legend_page(self):
+        """Halaman 2: Penjelasan visual tiap status chip."""
+        self.add_page()
+        pw = self.w - self.l_margin - self.r_margin
+
+        self._set_text(C_GRAY_TEXT)
+        self.set_font(self.FONT, "", 8)
+        self.cell(0, 5, "Keterangan status yang digunakan di laporan ini:",
+                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self._set_text(C_BLACK)
+        self.ln(4)
+
+        legend_items = [
+            ("passed",  "Pass",    C_PASS,
+             "Sesuai expected result."),
+            ("flaky",   "Flaky",   C_FLAKY,
+             "Gagal lalu lulus saat diulang otomatis. Dihitung lulus, bukan bug."),
+            ("failed",  "Fail",    C_FAIL,
+             "Tidak sesuai expected walau sudah diulang. Masuk Bug Report."),
+            ("error",   "Error",   C_ERROR,
+             "Test gagal di tahap persiapan (setup/teardown)."),
+            ("skipped", "Skipped", C_SKIP,
+             "Sengaja tidak dijalankan (alasan di bagian 5)."),
+        ]
+
+        chip_w = 28
+        row_h = 10
+        for status, label, color, desc in legend_items:
+            x0 = self.l_margin
+            y0 = self.get_y()
+            # Chip (filled pill)
+            self._set_fill(color)
+            self._set_draw(color)
+            self.rect(x0, y0, chip_w, row_h, style="F")
+            self._set_text(C_WHITE)
+            self.set_font(self.FONT, "B", 8)
+            self.set_xy(x0, y0)
+            self.cell(chip_w, row_h, label, align="C",
+                      new_x=XPos.RIGHT, new_y=YPos.TOP)
+            # Description
+            self._set_text(C_BLACK)
+            self.set_font(self.FONT, "", 9)
+            self.set_xy(x0 + chip_w + 5, y0 + 1)
+            self.cell(pw - chip_w - 5, row_h - 2, desc,
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            self.ln(3)
+
+        self._set_text(C_BLACK)
 
     def test_case_pages(self, results: list[dict], test_plans: dict):
         self.add_page()
@@ -811,10 +911,13 @@ class SGSReport(FPDF):
                     pass
             self._set_text(C_GRAY_TEXT)
             self.set_font(self.FONT, "", 6)
+            feature_path = bug.get("feature", "").strip("/")
+            tp_path = f"test-plan/{feature_path}/test-{feature_path.split('/')[-1]}.md" if feature_path else "-"
             meta_right = [
                 ("URL SAAT GAGAL", bug.get("url", "-")),
                 ("VERIFIKASI", f"Gagal {bug.get('attempts', 2)}x berturut-turut (diulang otomatis)"),
                 ("TEST SCRIPT", bug.get("nodeid", "-")),
+                ("TEST PLAN", tp_path),
                 ("LOG ERROR", bug.get("log", "-")),
             ]
             for lab, val in meta_right:
@@ -932,6 +1035,7 @@ def generate(results_path: str) -> str:
     pdf.set_author("QBIT")
 
     pdf.cover(results)
+    pdf.legend_page()
     pdf.test_case_pages(results, test_plans)
     pdf.bug_list_page(results)
     pdf.bug_detail_pages(results, test_plans)
