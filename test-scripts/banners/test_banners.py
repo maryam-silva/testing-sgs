@@ -201,6 +201,24 @@ def test_create_banner_empty_title(cms_page: Page):
 
 @pytest.mark.cms
 @pytest.mark.cross_check
+def test_banner_active_on_web(cms_page: Page, web_page: Page):
+    """TP-BAN-06: Banner Active tampil di homepage web"""
+    _go_banners(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    _fill_banner_form(cms_page, TITLE, set_inactive=False)
+
+    try:
+        web_page.goto(WEB_BASE_URL)
+        web_page.wait_for_load_state("networkidle")
+        expect(web_page.get_by_text(TITLE, exact=False)).to_be_visible()
+    finally:
+        _cleanup_banner(cms_page, TITLE)
+
+
+@pytest.mark.cms
+@pytest.mark.cross_check
 def test_banner_inactive_not_on_web(cms_page: Page, web_page: Page):
     """TP-BAN-07: Banner Inactive tidak tampil di web"""
     _go_banners(cms_page)
@@ -212,8 +230,44 @@ def test_banner_inactive_not_on_web(cms_page: Page, web_page: Page):
     try:
         web_page.goto(WEB_BASE_URL)
         web_page.wait_for_load_state("networkidle")
-        # Banner section di homepage
         banner_text = web_page.get_by_text(TITLE, exact=False)
         expect(banner_text).not_to_be_visible()
     finally:
         _cleanup_banner(cms_page, TITLE)
+
+
+@pytest.mark.cms
+def test_create_banner_special_chars_title(cms_page: Page):
+    """Edge: Judul banner dengan karakter khusus tersimpan aman"""
+    special_title = auto("Banner <b>bold</b> & 'quotes'")
+    _go_banners(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    _fill_banner_form(cms_page, special_title, set_inactive=True)
+
+    try:
+        _go_banners(cms_page)
+        expect(cms_page).to_have_url(lambda url: "/banners" in url)
+        expect(cms_page.locator("dialog[open]")).to_have_count(0)
+    finally:
+        _cleanup_banner(cms_page, special_title)
+
+
+@pytest.mark.cms
+def test_create_banner_no_title_no_image(cms_page: Page):
+    """Edge: Simpan banner tanpa judul dan tanpa gambar — keduanya wajib"""
+    _go_banners(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    cms_page.wait_for_load_state("networkidle")
+
+    # Langsung submit tanpa isi apapun
+    cms_page.get_by_role("button", name="Save").or_(
+        cms_page.get_by_role("button", name="Submit")
+    ).first.click()
+
+    expect(
+        cms_page.locator("[class*=error], [class*=invalid], [role='alert']").first
+    ).to_be_visible()

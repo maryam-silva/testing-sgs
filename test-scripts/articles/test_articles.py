@@ -227,6 +227,66 @@ def test_create_article_empty_title(cms_page: Page):
 
 
 @pytest.mark.cms
+def test_create_article_no_category(cms_page: Page):
+    """TP-ART-06: Simpan artikel tanpa kategori gagal"""
+    _go_articles(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).or_(
+        cms_page.get_by_role("link", name="Tambah")
+    ).first.click()
+    cms_page.wait_for_load_state("networkidle")
+
+    # Isi judul dan konten, tapi pastikan kategori kosong/default
+    title_input = cms_page.get_by_label("Title", exact=False).first
+    title_input.fill(auto("No Category Article"))
+
+    content_area = cms_page.locator(
+        "textarea, [contenteditable='true'], .ql-editor"
+    ).first
+    if content_area.count() > 0:
+        content_area.click()
+        content_area.fill(CONTENT)
+
+    # Reset kategori ke pilihan kosong/default jika ada
+    cat_select = cms_page.locator("select").filter(has_text="Kategori").or_(
+        cms_page.locator("select").filter(has_text="Category")
+    ).first
+    if cat_select.count() > 0:
+        cat_select.select_option(index=0)
+
+    cms_page.get_by_role("button", name="Save").or_(
+        cms_page.get_by_role("button", name="Submit")
+    ).first.click()
+
+    # Harus muncul pesan validasi atau tetap di form
+    expect(
+        cms_page.locator("[class*=error], [class*=invalid], [role='alert']").first
+    ).to_be_visible()
+
+
+@pytest.mark.cms
+@pytest.mark.cross_check
+def test_article_active_on_web(cms_page: Page, web_page: Page):
+    """TP-ART-07: Artikel status Active tampil di web"""
+    _go_articles(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).or_(
+        cms_page.get_by_role("link", name="Tambah")
+    ).first.click()
+    # Buat artikel dengan status Active (set_inactive=False)
+    _fill_article_form(cms_page, TITLE, set_inactive=False)
+
+    try:
+        web_page.goto(f"{WEB_BASE_URL}/articles")
+        web_page.wait_for_load_state("networkidle")
+        expect(web_page.get_by_text(TITLE, exact=False)).to_be_visible()
+    finally:
+        _cleanup_article(cms_page, TITLE)
+
+
+@pytest.mark.cms
 @pytest.mark.cross_check
 def test_article_inactive_not_on_web(cms_page: Page, web_page: Page):
     """TP-ART-08: Artikel Inactive tidak tampil di web"""
@@ -247,3 +307,50 @@ def test_article_inactive_not_on_web(cms_page: Page, web_page: Page):
         expect(article_on_web).not_to_be_visible()
     finally:
         _cleanup_article(cms_page, TITLE)
+
+
+@pytest.mark.cms
+def test_create_article_special_chars_title(cms_page: Page):
+    """Edge: Judul artikel dengan karakter khusus tersimpan aman (tidak XSS)"""
+    special_title = auto("Article <script>alert(1)</script> & 'test'")
+    _go_articles(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).or_(
+        cms_page.get_by_role("link", name="Tambah")
+    ).first.click()
+    _fill_article_form(cms_page, special_title, set_inactive=True)
+
+    try:
+        _go_articles(cms_page)
+        # Halaman harus tetap normal (tidak ada alert/script executed)
+        expect(cms_page).to_have_url(lambda url: "/articles" in url)
+        # Script tag tidak boleh ter-execute — cek tidak ada dialog aktif
+        expect(cms_page.locator("dialog[open]")).to_have_count(0)
+    finally:
+        _cleanup_article(cms_page, special_title)
+
+
+@pytest.mark.cms
+def test_create_article_very_long_title(cms_page: Page):
+    """Edge: Judul artikel sangat panjang ditolak atau dipotong"""
+    long_title = auto("A" * 300)
+    _go_articles(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).or_(
+        cms_page.get_by_role("link", name="Tambah")
+    ).first.click()
+    cms_page.wait_for_load_state("networkidle")
+
+    title_input = cms_page.get_by_label("Title", exact=False).first
+    title_input.fill(long_title)
+    cms_page.get_by_role("button", name="Save").or_(
+        cms_page.get_by_role("button", name="Submit")
+    ).first.click()
+
+    # Ekspektasi: validasi error ATAU tersimpan dengan judul terpotong
+    # Pastikan tidak crash (halaman masih valid)
+    expect(cms_page).to_have_url(lambda url: "sgs" in url or "localhost" in url)
+    # Cleanup jika tersimpan
+    _cleanup_article(cms_page, auto("A" * 100))

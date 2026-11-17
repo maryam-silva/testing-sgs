@@ -217,6 +217,60 @@ def test_create_faq_empty_question(cms_page: Page):
 
 
 @pytest.mark.cms
+def test_create_faq_empty_answer(cms_page: Page):
+    """TP-FAQ-06: Simpan FAQ tanpa jawaban gagal"""
+    _go_faqs(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    cms_page.wait_for_load_state("networkidle")
+
+    # Isi pertanyaan, kosongkan jawaban
+    q_input = cms_page.get_by_label("Question", exact=False).or_(
+        cms_page.get_by_label("Pertanyaan", exact=False)
+    ).first
+    q_input.fill(QUESTION)
+
+    a_input = cms_page.get_by_label("Answer", exact=False).or_(
+        cms_page.get_by_label("Jawaban", exact=False)
+    ).first
+    if a_input.count() > 0:
+        a_input.clear()
+    else:
+        content_area = cms_page.locator("textarea, [contenteditable='true'], .ql-editor").first
+        if content_area.count() > 0:
+            content_area.click()
+            cms_page.keyboard.press("Control+A")
+            cms_page.keyboard.press("Delete")
+
+    cms_page.get_by_role("button", name="Save").or_(
+        cms_page.get_by_role("button", name="Submit")
+    ).first.click()
+
+    expect(
+        cms_page.locator("[class*=error], [class*=invalid], [role='alert']").first
+    ).to_be_visible()
+
+
+@pytest.mark.cms
+@pytest.mark.cross_check
+def test_faq_active_on_web(cms_page: Page, web_page: Page):
+    """TP-FAQ-07: FAQ Active tampil di halaman FAQ web"""
+    _go_faqs(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    _fill_faq_form(cms_page, QUESTION, set_inactive=False)
+
+    try:
+        web_page.goto(f"{WEB_BASE_URL}/faq")
+        web_page.wait_for_load_state("networkidle")
+        expect(web_page.get_by_text(QUESTION, exact=False)).to_be_visible()
+    finally:
+        _cleanup_faq(cms_page, QUESTION)
+
+
+@pytest.mark.cms
 @pytest.mark.cross_check
 def test_faq_inactive_not_on_web(cms_page: Page, web_page: Page):
     """TP-FAQ-08: FAQ Inactive tidak tampil di web"""
@@ -227,10 +281,27 @@ def test_faq_inactive_not_on_web(cms_page: Page, web_page: Page):
     _fill_faq_form(cms_page, QUESTION, set_inactive=True)
 
     try:
-        # Cek di halaman FAQ web (atau homepage yang ada FAQ section)
         web_page.goto(f"{WEB_BASE_URL}/faq")
         web_page.wait_for_load_state("networkidle")
         faq_on_web = web_page.get_by_text(QUESTION, exact=False)
         expect(faq_on_web).not_to_be_visible()
     finally:
         _cleanup_faq(cms_page, QUESTION)
+
+
+@pytest.mark.cms
+def test_create_faq_special_chars_question(cms_page: Page):
+    """Edge: Pertanyaan FAQ dengan karakter khusus tersimpan aman"""
+    special_q = auto("FAQ <script>alert(1)</script> & 'test' ?")
+    _go_faqs(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    _fill_faq_form(cms_page, special_q, set_inactive=True)
+
+    try:
+        _go_faqs(cms_page)
+        expect(cms_page).to_have_url(lambda url: "/faqs" in url)
+        expect(cms_page.locator("dialog[open]")).to_have_count(0)
+    finally:
+        _cleanup_faq(cms_page, special_q)

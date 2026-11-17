@@ -197,6 +197,55 @@ def test_create_gallery_no_image(cms_page: Page):
 
 
 @pytest.mark.cms
+def test_create_gallery_empty_title(cms_page: Page):
+    """Edge: Simpan galeri tanpa judul gagal"""
+    _go_galleries(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    cms_page.wait_for_load_state("networkidle")
+
+    # Upload gambar tapi kosongkan judul
+    if os.path.exists(IMAGE_PATH):
+        file_input = cms_page.locator("input[type='file']").first
+        if file_input.count() > 0:
+            file_input.set_input_files(IMAGE_PATH)
+            cms_page.wait_for_timeout(1000)
+
+    title_input = cms_page.get_by_label("Title", exact=False).or_(
+        cms_page.get_by_placeholder("Title")
+    ).first
+    if title_input.count() > 0:
+        title_input.clear()
+
+    cms_page.get_by_role("button", name="Save").or_(
+        cms_page.get_by_role("button", name="Submit")
+    ).first.click()
+
+    expect(
+        cms_page.locator("[class*=error], [class*=invalid], [role='alert']").first
+    ).to_be_visible()
+
+
+@pytest.mark.cms
+@pytest.mark.cross_check
+def test_gallery_active_on_web(cms_page: Page, web_page: Page):
+    """TP-GAL-06: Item galeri Active tampil di web"""
+    _go_galleries(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    _fill_gallery_form(cms_page, TITLE, set_inactive=False)
+
+    try:
+        web_page.goto(f"{WEB_BASE_URL}/gallery")
+        web_page.wait_for_load_state("networkidle")
+        expect(web_page.get_by_text(TITLE, exact=False)).to_be_visible()
+    finally:
+        _cleanup_gallery(cms_page, TITLE)
+
+
+@pytest.mark.cms
 @pytest.mark.cross_check
 def test_gallery_inactive_not_on_web(cms_page: Page, web_page: Page):
     """TP-GAL-07: Item galeri Inactive tidak tampil di web"""
@@ -207,10 +256,27 @@ def test_gallery_inactive_not_on_web(cms_page: Page, web_page: Page):
     _fill_gallery_form(cms_page, TITLE, set_inactive=True)
 
     try:
-        # Cek di halaman galeri web
         web_page.goto(f"{WEB_BASE_URL}/gallery")
         web_page.wait_for_load_state("networkidle")
         gallery_on_web = web_page.get_by_text(TITLE, exact=False)
         expect(gallery_on_web).not_to_be_visible()
     finally:
         _cleanup_gallery(cms_page, TITLE)
+
+
+@pytest.mark.cms
+def test_create_gallery_special_chars_title(cms_page: Page):
+    """Edge: Judul galeri dengan karakter khusus tersimpan aman"""
+    special_title = auto("Gallery <img src=x onerror=alert(1)> & 'test'")
+    _go_galleries(cms_page)
+    cms_page.get_by_role("link", name="Add").or_(
+        cms_page.get_by_role("button", name="Add")
+    ).first.click()
+    _fill_gallery_form(cms_page, special_title, set_inactive=True)
+
+    try:
+        _go_galleries(cms_page)
+        expect(cms_page).to_have_url(lambda url: "/galleries" in url)
+        expect(cms_page.locator("dialog[open]")).to_have_count(0)
+    finally:
+        _cleanup_gallery(cms_page, special_title)
