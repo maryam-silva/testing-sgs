@@ -280,25 +280,13 @@ class SGSReport(FPDF):
         self.cell(LOGO_W + 4, 4, "QA Automation · QBIT",
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-        # Date chip (top-right inside header)
-        chip_w = 60
-        chip_x = self.w - self.r_margin - chip_w
-        self._set_fill(C_RED)
-        self.rect(chip_x, 4, chip_w, 24, style="F")
-        self.set_xy(chip_x + 3, 6)
-        self._set_text(C_WHITE)
-        self.set_font(self.FONT, "", 7)
-        self.cell(chip_w - 6, 5, "Dijalankan", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_xy(chip_x + 3, 11)
-        self.set_font(self.FONT, "B", 10)
+        # Date info — small text, right-aligned, below logo subtitle
         ts = meta.get("timestamp", "").replace("_", " ")
-        self.cell(chip_w - 6, 6, ts, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_xy(chip_x + 3, 19)
-        self._set_fill((180, 10, 20))
-        self._set_text(C_WHITE)
-        self.set_font(self.FONT, "B", 8)
         env_text = meta.get("environment", "development").upper()
-        self.cell(chip_w - 6, 5, env_text, border=0, align="C", fill=True,
+        self._set_text(C_GRAY_LIGHT)
+        self.set_font(self.FONT, "", 7)
+        self.set_xy(self.l_margin, LOGO_Y + LOGO_H + 6)
+        self.cell(0, 4, f"Dijalankan  {ts}  ·  {env_text}", align="R",
                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         self._set_text(C_BLACK)
