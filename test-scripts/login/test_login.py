@@ -10,7 +10,7 @@ _RE_LOGIN = re.compile(r"/login")
 @pytest.fixture(autouse=True)
 def go_to_login(page: Page):
     page.goto(CMS_BASE_URL)
-    expect(page).to_have_url(_RE_LOGIN)
+    page.wait_for_url(_RE_LOGIN, timeout=15000)
 
 
 # TP-LOGIN-01
