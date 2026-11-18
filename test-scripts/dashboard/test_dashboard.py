@@ -1,3 +1,4 @@
+import re
 import pytest
 from playwright.sync_api import Page, expect
 from utils.playwright_helpers import login_cms
@@ -10,7 +11,7 @@ def logged_in(page: Page):
 
 # TP-DASH-01
 def test_dashboard_loads(page: Page):
-    expect(page).not_to_have_url(lambda url: "/login" in url)
+    expect(page).not_to_have_url(re.compile(r"/login"))
 
 
 # TP-DASH-02
@@ -26,6 +27,6 @@ def test_dashboard_redirects_when_not_logged_in(browser):
     context = browser.new_context(base_url=CMS_BASE_URL)
     p = context.new_page()
     p.goto(CMS_BASE_URL + "/dashboard")
-    expect(p).to_have_url(lambda url: "/login" in url or url == CMS_BASE_URL + "/")
+    expect(p).to_have_url(re.compile(r"/login|/$"))
     p.close()
     context.close()
