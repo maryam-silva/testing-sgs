@@ -83,8 +83,34 @@ def _safe(text: str) -> str:
         text = str(text)
     for src, dst in _UNICODE_MAP.items():
         text = text.replace(src, dst)
-    # Strip emoji dan karakter non-Latin-1 lainnya
     return text.encode("latin-1", errors="ignore").decode("latin-1")
+
+
+def _trunc(text: str, max_chars: int) -> str:
+    """Flatten newlines, truncate to max_chars with ellipsis."""
+    text = " ".join(text.split())
+    if len(text) > max_chars:
+        return text[:max_chars - 1] + "~"
+    return text
+
+
+def _extract_failure(message: str) -> str:
+    """Ambil baris paling informatif dari pytest traceback."""
+    if not message:
+        return "-"
+    for line in reversed(message.split("\n")):
+        s = line.strip()
+        if not s:
+            continue
+        if any(k in s for k in (
+            "AssertionError", "TimeoutError", "assert ", "Expected ",
+            "Received ", "Error:", "!=", "not visible", "not found",
+        )):
+            return _safe(s[:300])
+    for line in reversed(message.split("\n")):
+        if line.strip():
+            return _safe(line.strip()[:300])
+    return _safe(message[:300])
 
 
 # ---------------------------------------------------------------------------
@@ -669,53 +695,70 @@ class SGSReport(FPDF):
         self._set_text(C_BLACK)
 
         for item in items:
-            # Highlight failed rows
             is_fail = item["status"] == "failed"
-            self._set_fill((255, 240, 240) if is_fail else (C_BG if items.index(item) % 2 == 0 else C_WHITE))
+            fill_color = (255, 240, 240) if is_fail else (C_BG if items.index(item) % 2 == 0 else C_WHITE)
+            self._set_fill(fill_color)
 
             doc = item.get("doc", "")
             tc_id = doc.split(":")[0].strip() if ":" in doc else ""
             title = doc.split(":", 1)[1].strip() if ":" in doc else doc
 
-            # Look up test plan row
             tp = test_plans.get(tc_id, {})
-            steps_text = tp.get("test_steps", tp.get("step_to_reproduce", "")).replace("<br>", "\n")
+            steps_text = tp.get("test_steps", tp.get("step_to_reproduce", "")).replace("<br>", " ")
             expected_text = tp.get("expected_result", "")
             tc_type = tp.get("test_type", tp.get("type", ""))
             priority = tp.get("priority", "")
 
             remark = item.get("message", "")
             if item["status"] == "flaky" and not remark:
-                remark = "Flaky — lulus setelah diulang"
+                remark = "Flaky - lulus setelah diulang"
 
             ts = self.meta.get("timestamp", "").replace("_", " ")
             date_str = ts.split(" ")[0] if ts else ""
             tester = self.meta.get("tester", os.environ.get("USERNAME", "-"))
 
+            feat = item.get("feature", "")
+            feat_parts = feat.split("/") if feat else ["", ""]
+            feat_main = feat_parts[-2] if len(feat_parts) >= 2 else ""
+            feat_sub = feat_parts[-1] if feat_parts else ""
+
             row_h = 5
             self.set_font(self.FONT, "", 6)
-            fill = True
+
+            # Row height = 2 lines for steps/expected/remark, 1 line for rest
+            # Pre-draw background rect to cover full row
+            y_row = self.get_y()
+            row_total_h = row_h * 2
+            self._set_fill(fill_color)
+            self.rect(self.l_margin, y_row, sum(col.values()), row_total_h, style="F")
+
+            # Render all cells using cell() with truncation — no overflow
+            self.set_xy(self.l_margin, y_row)
+            cells = [
+                ("tc_id",    _trunc(tc_id, 14)),
+                ("features", _trunc(feat_main, 10)),
+                ("sub",      _trunc(feat_sub, 10)),
+                ("desc",     _trunc(title, 25)),
+                ("steps",    _trunc(steps_text, 65)),
+                ("expected", _trunc(expected_text, 52)),
+                ("type",     _trunc(tc_type, 9)),
+                ("priority", _trunc(priority, 10)),
+            ]
+            for key, text in cells:
+                self.cell(col[key], row_total_h, text, border=0, fill=False,
+                          new_x=XPos.RIGHT, new_y=YPos.TOP)
+
+            self.status_chip(item["status"], col["status"], row_total_h)
+
             for key, text in [
-                ("tc_id", tc_id), ("features", item.get("feature", "").split("/")[-2] if "/" in item.get("feature", "") else ""),
-                ("sub", item.get("feature", "").split("/")[-1]),
-                ("desc", title), ("steps", steps_text), ("expected", expected_text),
-                ("type", tc_type), ("priority", priority),
+                ("tester", _trunc(tester, 9)),
+                ("date",   _trunc(date_str, 12)),
+                ("remark", _trunc(remark, 38)),
             ]:
-                self.multi_cell(col[key], row_h, text, border=0, fill=fill,
-                                new_x=XPos.RIGHT, new_y=YPos.TOP, max_line_height=row_h)
-                fill = False
+                self.cell(col[key], row_total_h, text, border=0, fill=False,
+                          new_x=XPos.RIGHT, new_y=YPos.TOP)
 
-            # Status chip inline
-            x0 = self.get_x()
-            y0 = self.get_y()
-            self.status_chip(item["status"], col["status"], row_h)
-            self.set_xy(x0 + col["status"], y0)
-
-            for key, text in [("tester", tester), ("date", date_str), ("remark", remark)]:
-                self.multi_cell(col[key], row_h, text, border=0,
-                                new_x=XPos.RIGHT, new_y=YPos.TOP, max_line_height=row_h)
-
-            self.ln(row_h)
+            self.set_y(y_row + row_total_h)
             self._set_text(C_BLACK)
 
     def bug_list_page(self, results: list[dict]):
@@ -759,38 +802,51 @@ class SGSReport(FPDF):
             tc_id = doc.split(":")[0].strip() if ":" in doc else ""
             title = doc.split(":", 1)[1].strip() if ":" in doc else doc
             platform = bug.get("platform", "web").title()
-            feature = bug.get("feature", "").replace("/", " › ").title()
-            message = bug.get("message", "")[:120]
+            feature = bug.get("feature", "").replace("/", " > ").title()
 
             from data.bug_context import BUG_CONTEXT
             ctx = BUG_CONTEXT.get(tc_id, {})
             priority = ctx.get("severity", "2 - Medium")
             has_ss = bool(bug.get("screenshot"))
-            evidence = "Screenshot (lihat detail)" if has_ss else "-"
+            evidence = "Ada (lihat detail)" if has_ss else "-"
 
-            self._set_fill(C_BG if i % 2 == 0 else C_WHITE)
-            self.set_font(self.FONT, "B", 6)
+            fill_color = C_BG if i % 2 == 0 else C_WHITE
             row_h = 5
-            fill = True
+            row_total_h = row_h * 2
+
+            # Pre-draw background rect
+            y_row = self.get_y()
+            self._set_fill(fill_color)
+            self.rect(self.l_margin, y_row, sum(col.values()), row_total_h, style="F")
+
+            self.set_xy(self.l_margin, y_row)
+            self.set_font(self.FONT, "B", 6)
+            self.cell(col["id"], row_total_h, bug_id, border=0, fill=False,
+                      new_x=XPos.RIGHT, new_y=YPos.TOP)
+            self.set_font(self.FONT, "", 6)
             for key, text in [
-                ("id", bug_id), ("date", date_str), ("platform", platform),
-                ("menu", feature), ("condition", f"{title}\n{tc_id}"),
-                ("raised", tester),
+                ("date",     _trunc(date_str, 14)),
+                ("platform", _trunc(platform, 12)),
+                ("menu",     _trunc(feature, 20)),
+                ("condition", _trunc(f"{title} ({tc_id})", 60)),
+                ("raised",   _trunc(tester, 10)),
             ]:
-                self.multi_cell(col[key], row_h, text, border=0, fill=fill,
-                                new_x=XPos.RIGHT, new_y=YPos.TOP, max_line_height=row_h)
-                self.set_font(self.FONT, "", 6)
-                fill = False
+                self.cell(col[key], row_total_h, text, border=0, fill=False,
+                          new_x=XPos.RIGHT, new_y=YPos.TOP)
 
-            # Priority chip
-            self.priority_chip(priority, col["priority"], row_h)
+            self.priority_chip(priority, col["priority"], row_total_h)
 
-            for key, text in [("evidence", evidence), ("type", "1 - Bug"),
-                               ("assigned", ""), ("status", "1 - Raised"),
-                               ("remarks", f"Test case {tc_id}")]:
-                self.multi_cell(col[key], row_h, text, border=0,
-                                new_x=XPos.RIGHT, new_y=YPos.TOP, max_line_height=row_h)
-            self.ln(row_h)
+            for key, text in [
+                ("evidence", _trunc(evidence, 16)),
+                ("type",     "Bug"),
+                ("assigned", ""),
+                ("status",   "Raised"),
+                ("remarks",  _trunc(f"Detail: {tc_id}", 20)),
+            ]:
+                self.cell(col[key], row_total_h, text, border=0, fill=False,
+                          new_x=XPos.RIGHT, new_y=YPos.TOP)
+
+            self.set_y(y_row + row_total_h)
             self._set_text(C_BLACK)
 
     def bug_detail_pages(self, results: list[dict], test_plans: dict):
@@ -860,26 +916,42 @@ class SGSReport(FPDF):
             self._set_text(C_BLACK)
             self.ln(2)
 
-            # Pre-step, Step, Actual, Expected, Impact
+            # Content area: left column (steps/actual/expected) + right column (screenshot + trace)
             left_w = pw * 0.55
             right_w = pw * 0.43
+            right_x = self.l_margin + left_w + 4
+            content_y = self.get_y()   # y after metadata row
 
+            # ── Left column ──────────────────────────────────────────────────
             pre_step = tp.get("pre_conditions", tp.get("preconditions", ""))
             if not pre_step:
-                pre_step = f"CMS: {cms_url}\nWeb: {web_url}\nSudah login di CMS."
+                pre_step = f"Login ke CMS: {cms_url}"
             steps = tp.get("test_steps", tp.get("step_to_reproduce", "")).replace("<br>", "\n")
+
+            # Actual: bersihkan dari raw traceback → kalimat yang bisa dibaca dev
+            raw_actual = ctx.get("actual", "")
+            if not raw_actual and message:
+                raw_actual = _extract_failure(message)
+            actual = raw_actual or "-"
+
+            # Expected: dari BUG_CONTEXT > test plan > fallback
             expected = ctx.get("expected", tp.get("expected_result", ""))
-            actual = ctx.get("actual", message)
+            if not expected:
+                expected = "Lihat kolom Expected Result di test plan."
+
             impact = ctx.get("impact", "")
 
             def detail_row(label: str, text: str, color=None):
+                self.set_x(self.l_margin)
                 self._set_text(C_GRAY_TEXT)
-                self.set_font(self.FONT, "", 7)
+                self.set_font(self.FONT, "B", 7)
                 self.cell(28, 5, label.upper(), new_x=XPos.RIGHT, new_y=YPos.TOP)
+                x_text = self.get_x()
+                y_text = self.get_y()
                 if color:
                     self._set_fill(color)
-                    self._set_text(C_BLACK if color == (255, 240, 240) else C_BLACK)
                     self.set_font(self.FONT, "", 8)
+                    self._set_text(C_BLACK)
                     self.multi_cell(left_w - 30, 5, text, border=0, fill=True,
                                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 else:
@@ -888,44 +960,58 @@ class SGSReport(FPDF):
                     self.multi_cell(left_w - 30, 5, text,
                                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 self._set_text(C_BLACK)
+                self.ln(1)
 
-            detail_row("PRE-STEP", pre_step)
-            detail_row("STEP", steps)
-            detail_row("ACTUAL RESULT", actual, (255, 240, 240))
-            detail_row("EXPECTED RESULT", expected, (240, 255, 240))
+            detail_row("Pre-kondisi", pre_step)
+            detail_row("Langkah", steps)
+            detail_row("Yang terjadi", actual, (255, 240, 240))
+            detail_row("Seharusnya", expected, (240, 255, 240))
             if impact:
-                detail_row("IMPACT", impact, (255, 255, 220))
+                detail_row("Dampak", impact, (255, 255, 220))
 
-            # Right column: screenshot + meta
-            right_x = self.l_margin + left_w + 4
-            self.set_xy(right_x, card_y + 12)
+            left_bottom_y = self.get_y()
+
+            # ── Right column ─────────────────────────────────────────────────
+            self.set_xy(right_x, content_y)
             ss_path = bug.get("screenshot", "")
+            ss_h = 0
             if ss_path and Path(ss_path).exists():
                 try:
-                    self.image(ss_path, x=right_x, w=right_w, h=55)
-                    self.set_xy(right_x, self.get_y() + 2)
+                    ss_h = 52
+                    self.image(ss_path, x=right_x, y=content_y, w=right_w, h=ss_h)
                 except Exception:
-                    pass
+                    ss_h = 0
+
+            meta_y = content_y + ss_h + (2 if ss_h else 0)
             self._set_text(C_GRAY_TEXT)
             self.set_font(self.FONT, "", 6)
             feature_path = bug.get("feature", "").strip("/")
-            tp_path = f"test-plan/{feature_path}/test-{feature_path.split('/')[-1]}.md" if feature_path else "-"
+            tp_path = (
+                f"test-plan/{feature_path}/test-{feature_path.split('/')[-1]}.md"
+                if feature_path else "-"
+            )
+            nodeid = bug.get("nodeid", "-")
+            log_path = bug.get("log", "-")
+            attempts = bug.get("attempts", 2)
             meta_right = [
-                ("URL SAAT GAGAL", bug.get("url", "-")),
-                ("VERIFIKASI", f"Gagal {bug.get('attempts', 2)}x berturut-turut (diulang otomatis)"),
-                ("TEST SCRIPT", bug.get("nodeid", "-")),
-                ("TEST PLAN", tp_path),
-                ("LOG ERROR", bug.get("log", "-")),
+                ("Gagal",        f"{attempts}x berturut-turut (diulang otomatis)"),
+                ("Test script",  _trunc(nodeid, 60)),
+                ("Test plan",    tp_path),
+                ("Log error",    _trunc(log_path, 60)),
             ]
             for lab, val in meta_right:
-                self.set_x(right_x)
+                self.set_xy(right_x, meta_y)
                 self.set_font(self.FONT, "B", 6)
                 self._set_text(C_GRAY_TEXT)
-                self.cell(28, 4, lab, new_x=XPos.RIGHT, new_y=YPos.TOP)
+                self.cell(26, 4, lab, new_x=XPos.RIGHT, new_y=YPos.TOP)
                 self.set_font(self.FONT, "", 6)
                 self._set_text(C_BLACK)
-                self.multi_cell(right_w - 30, 4, val,
+                self.multi_cell(right_w - 28, 4, val,
                                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                meta_y = self.get_y()
+
+            # Advance past whichever column is taller
+            self.set_y(max(left_bottom_y, meta_y) + 2)
             self._set_text(C_BLACK)
 
     def skipped_page(self, results: list[dict]):
@@ -954,16 +1040,20 @@ class SGSReport(FPDF):
             doc = item.get("doc", "")
             tc_id = doc.split(":")[0].strip() if ":" in doc else ""
             title = doc.split(":", 1)[1].strip() if ":" in doc else doc
-            reason = item.get("message", "")
+            reason = _trunc(item.get("message", "") or "Dikecualikan dari run ini", pw - 150)
+            row_h = 5
+            y_row = self.get_y()
             self._set_fill(C_BG)
+            self.rect(self.l_margin, y_row, pw, row_h, style="F")
+            self.set_xy(self.l_margin, y_row)
             self.set_font(self.FONT, "", 7)
-            self.cell(35, 5, tc_id, border=0, fill=True,
+            self.cell(35, row_h, _trunc(tc_id, 20), border=0, fill=False,
                       new_x=XPos.RIGHT, new_y=YPos.TOP)
-            self.cell(90, 5, title, border=0, fill=True,
+            self.cell(90, row_h, _trunc(title, 55), border=0, fill=False,
                       new_x=XPos.RIGHT, new_y=YPos.TOP)
-            self.status_chip("skipped", 20, 5)
-            self.multi_cell(pw - 150, 5, reason, border=0,
-                            new_x=XPos.LMARGIN, new_y=YPos.NEXT, max_line_height=5)
+            self.status_chip("skipped", 20, row_h)
+            self.cell(pw - 150, row_h, reason, border=0, fill=False,
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self._set_text(C_BLACK)
 
     def flaky_page(self, results: list[dict]):
@@ -996,19 +1086,23 @@ class SGSReport(FPDF):
             doc = item.get("doc", "")
             tc_id = doc.split(":")[0].strip() if ":" in doc else ""
             title = doc.split(":", 1)[1].strip() if ":" in doc else doc
-            first_error = item.get("first_error", item.get("message", ""))[:300]
+            first_error = _extract_failure(item.get("first_error", item.get("message", "")))
             attempts = item.get("attempts", 2)
+            row_h = 5
+            y_row = self.get_y()
             self._set_fill(C_BG)
+            self.rect(self.l_margin, y_row, pw, row_h, style="F")
+            self.set_xy(self.l_margin, y_row)
             self.set_font(self.FONT, "", 7)
-            self.cell(35, 5, tc_id, border=0, fill=True,
+            self.cell(35, row_h, _trunc(tc_id, 20), border=0, fill=False,
                       new_x=XPos.RIGHT, new_y=YPos.TOP)
-            self.cell(90, 5, title, border=0, fill=True,
+            self.cell(90, row_h, _trunc(title, 55), border=0, fill=False,
                       new_x=XPos.RIGHT, new_y=YPos.TOP)
-            self.cell(20, 5, f"{attempts}x", border=0, fill=True, align="C",
+            self.cell(20, row_h, f"{attempts}x", border=0, fill=False, align="C",
                       new_x=XPos.RIGHT, new_y=YPos.TOP)
             self.set_font(self.FONT, "", 6)
-            self.multi_cell(pw - 150, 5, first_error, border=0,
-                            new_x=XPos.LMARGIN, new_y=YPos.NEXT, max_line_height=5)
+            self.cell(pw - 150, row_h, _trunc(first_error, 110), border=0, fill=False,
+                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             self._set_text(C_BLACK)
 
 
