@@ -17,14 +17,25 @@ def login_cms(page: Page) -> None:
     expect(page).not_to_have_url(_RE_LOGIN, timeout=15000)
 
 
-def cms_goto(page: Page, url: str, retries: int = 2) -> None:
-    """Navigasi ke URL CMS, retry login jika full-reload redirect balik ke /login
-    (race condition rehydrasi sesi auth setelah hard navigation)."""
-    for _ in range(retries):
-        page.goto(url)
-        page.wait_for_load_state("networkidle")
-        if not _RE_LOGIN.search(page.url):
-            return
+def cms_goto(page: Page, url: str) -> None:
+    """Navigasi ke halaman CMS via klik link sidebar (SPA client-side routing).
+
+    PENTING: hard navigation (page.goto() langsung ke sub-route) selalu berakhir
+    401 Unauthorized + redirect ke /login di app ini -- token auth hanya hidup di
+    memory JS dan tidak di-restore saat full page reload. Klik link sidebar adalah
+    satu-satunya cara navigasi antar modul yang tetap authenticated.
+    """
+    path = url.replace(CMS_BASE_URL, "")
+    if _RE_LOGIN.search(page.url):
         login_cms(page)
-    page.goto(url)
+
+    link = page.locator(f"a[href='{path}']").first
+    try:
+        # .click() auto-wait sampai elemen actionable -- sidebar render async
+        # setelah login, jadi .count() instan tidak cukup untuk deteksi
+        link.click(timeout=10000)
+    except Exception:
+        # Fallback terakhir jika link sidebar benar-benar tidak ada (rute tanpa menu)
+        page.goto(url)
+
     page.wait_for_load_state("networkidle")
