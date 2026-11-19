@@ -19,6 +19,26 @@ def test_contact_list_loads(cms_page: Page):
 
 
 @pytest.mark.cms
+def test_contact_search_filters_list(cms_page: Page):
+    """TP-CONTACT-03: Search contact berdasarkan nama memfilter tabel"""
+    cms_goto(cms_page, CONTACT_URL)
+    search = cms_page.locator("input[placeholder*='Search'], input[placeholder*='search']").first
+    if search.count() == 0:
+        pytest.skip("Tidak ada search box di halaman Contact")
+    search.fill("zzz-tidak-ada-data-xyz")
+    cms_page.wait_for_timeout(1200)
+    expect(cms_page.locator(".ant-empty-description", has_text="No data")).to_be_visible()
+
+
+@pytest.mark.cms
+def test_contact_status_filter_visible(cms_page: Page):
+    """TP-CONTACT-04: Filter Status pada halaman Contact tersedia"""
+    cms_goto(cms_page, CONTACT_URL)
+    status_filter = cms_page.get_by_text("Status", exact=True).first
+    expect(status_filter).to_be_visible()
+
+
+@pytest.mark.cms
 def test_contact_redirects_when_not_logged_in(browser):
     """TP-CONTACT-02: Akses /contact tanpa login redirect ke login"""
     context = browser.new_context(base_url=CMS_BASE_URL)
