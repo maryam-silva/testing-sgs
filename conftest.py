@@ -300,11 +300,11 @@ def pytest_sessionfinish(session, exitstatus):
     output = {"meta": meta, "results": _results}
     results_path = report_dir / "results.json"
     results_path.write_text(json.dumps(output, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\n[report] results.json → {results_path}")
+    print(f"\n[report] results.json -> {results_path}")
 
     try:
         from utils.pdf_report import generate
         pdf_path = generate(str(results_path))
-        print(f"[report] PDF report → {pdf_path}")
+        print(f"[report] PDF report -> {pdf_path}")
     except Exception as e:
         print(f"[report] PDF generation failed: {e}")
