@@ -1138,7 +1138,7 @@ def generate(results_path: str) -> str:
     project_slug = meta.get("project", "SGS").replace(" ", "-")
     out_path = out_dir / f"{project_slug}-Test-Report_{ts}.pdf"
     pdf.output(str(out_path))
-    print(f"[pdf] Report saved → {out_path}")
+    print(f"[pdf] Report saved -> {out_path}")
     return str(out_path)
 
 
