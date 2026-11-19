@@ -12,7 +12,7 @@ from playwright.sync_api import Page, expect
 
 from data.cms_data import auto, SAMPLE_ARTICLE
 from data.config import CMS_BASE_URL, WEB_BASE_URL
-from utils.playwright_helpers import cms_goto
+from utils.playwright_helpers import cms_goto, safe_idle
 
 TEST_IMAGE = str(Path(__file__).parent.parent.parent / "data" / "assets" / "test-image.jpg")
 
@@ -41,12 +41,12 @@ def _click_add(page: Page):
         "button:has-text('Tambah'), button:has-text('Buat'), "
         "a:has-text('Create'), a:has-text('Add'), a:has-text('Tambah')"
     ).first.click()
-    page.wait_for_load_state("networkidle")
+    safe_idle(page)
 
 
 def _fill_article_form(page: Page, title: str, content: str = CONTENT, set_inactive: bool = True):
     """Isi form artikel dan simpan."""
-    page.wait_for_load_state("networkidle")
+    safe_idle(page)
 
     # Gambar (wajib — form menolak submit tanpa image)
     image_input = page.locator("input[type='file']").first
@@ -80,16 +80,19 @@ def _fill_article_form(page: Page, title: str, content: str = CONTENT, set_inact
         en_option = page.locator(".ant-select-dropdown .ant-select-item-option", has_text="English").first
         if en_option.count() > 0:
             en_option.click()
-            page.wait_for_timeout(300)
+            # Pastikan switch bahasa benar-benar selesai sebelum isi field EN
+            expect(page.locator(".ant-select-selection-item[title='English (EN)']")).to_be_visible(timeout=5000)
+
             title_input_en = page.get_by_label("Title", exact=False).first
             title_input_en.fill(title)
+            expect(title_input_en).to_have_value(title)
+
             content_area_en = page.locator(
                 "textarea, [contenteditable='true'], .ql-editor, .tox-edit-area__iframe"
             ).first
             if content_area_en.count() > 0:
                 content_area_en.click()
                 content_area_en.fill(content)
-            page.wait_for_timeout(300)
 
     # Status adalah radio button (Active/Inactive) -- set inactive supaya tidak tampil di web
     if set_inactive:
@@ -103,12 +106,18 @@ def _fill_article_form(page: Page, title: str, content: str = CONTENT, set_inact
     ).or_(
         page.get_by_role("button", name="Simpan")
     ).first.click()
-    page.wait_for_load_state("networkidle")
+    safe_idle(page)
 
 
 def _find_row(page: Page, text: str):
-    """Cari baris tabel yang mengandung text (filter, bukan interpolasi CSS,
-    supaya aman dari title berisi tanda kutip/karakter khusus)."""
+    """Cari baris tabel yang mengandung text. List TIDAK ter-sort by Created At
+    terbaru -- artikel baru bisa saja tidak ada di halaman pertama, jadi filter
+    dulu pakai Search box. Filter (bukan interpolasi CSS) juga aman dari title
+    berisi tanda kutip/karakter khusus."""
+    search = page.locator("input[placeholder*='Search'], input[placeholder*='title']").first
+    if search.count() > 0:
+        search.fill(text)
+        page.wait_for_timeout(1000)
     return page.locator("tr").filter(has_text=text).first
 
 
@@ -121,7 +130,7 @@ def _wait_for_row(page: Page, title: str, attempts: int = 4, delay_ms: int = 150
             return row
         page.wait_for_timeout(delay_ms)
         page.reload()
-        page.wait_for_load_state("networkidle")
+        safe_idle(page)
     return _find_row(page, title)
 
 
@@ -148,7 +157,7 @@ def _cleanup_article(page: Page, title: str):
     ).first
     if confirm_btn.count() > 0:
         confirm_btn.click()
-    page.wait_for_load_state("networkidle")
+    safe_idle(page)
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +204,7 @@ def test_edit_article(cms_page: Page):
         _go_articles(cms_page)
         row = _find_row(cms_page, TITLE)
         _row_action(cms_page, row, "Edit")
-        cms_page.wait_for_load_state("networkidle")
+        safe_idle(cms_page)
 
         # Ubah judul
         title_input = cms_page.get_by_label("Title", exact=False).first
@@ -206,7 +215,7 @@ def test_edit_article(cms_page: Page):
         ).or_(
             cms_page.get_by_role("button", name="Simpan")
         ).first.click()
-        cms_page.wait_for_load_state("networkidle")
+        safe_idle(cms_page)
 
         _go_articles(cms_page)
         expect(_find_row(cms_page, TITLE_EDITED)).to_be_visible()
@@ -238,7 +247,7 @@ def test_create_article_empty_title(cms_page: Page):
     """TP-ART-05: Simpan artikel tanpa judul gagal"""
     _go_articles(cms_page)
     _click_add(cms_page)
-    cms_page.wait_for_load_state("networkidle")
+    safe_idle(cms_page)
 
     # Pastikan judul kosong, langsung simpan
     title_input = cms_page.get_by_label("Title", exact=False).first
@@ -258,7 +267,7 @@ def test_create_article_no_category(cms_page: Page):
     """TP-ART-06: Simpan artikel tanpa kategori gagal"""
     _go_articles(cms_page)
     _click_add(cms_page)
-    cms_page.wait_for_load_state("networkidle")
+    safe_idle(cms_page)
 
     # Isi judul dan konten, tapi pastikan kategori kosong/default
     title_input = cms_page.get_by_label("Title", exact=False).first
@@ -299,14 +308,14 @@ def test_article_active_on_web(cms_page: Page, web_page: Page):
 
     try:
         web_page.goto(f"{WEB_BASE_URL}/news")
-        web_page.wait_for_load_state("networkidle")
+        safe_idle(web_page)
         article_on_web = web_page.get_by_text(TITLE, exact=False)
         for _ in range(3):
             if article_on_web.count() > 0:
                 break
             web_page.wait_for_timeout(1500)
             web_page.reload()
-            web_page.wait_for_load_state("networkidle")
+            safe_idle(web_page)
             article_on_web = web_page.get_by_text(TITLE, exact=False)
         expect(article_on_web).to_be_visible()
     finally:
@@ -325,7 +334,7 @@ def test_article_inactive_not_on_web(cms_page: Page, web_page: Page):
     try:
         # Verifikasi di web
         web_page.goto(f"{WEB_BASE_URL}/news")
-        web_page.wait_for_load_state("networkidle")
+        safe_idle(web_page)
         article_on_web = web_page.get_by_text(TITLE, exact=False)
         expect(article_on_web).not_to_be_visible()
     finally:
