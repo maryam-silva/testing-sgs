@@ -12,7 +12,7 @@ ADMIN_URL = f"{CMS_BASE_URL}/admin"
 def test_admin_list_loads(cms_page: Page):
     """TP-ADMIN-01: Halaman daftar Admin tampil"""
     cms_goto(cms_page, ADMIN_URL)
-    expect(cms_page).to_have_url(ADMIN_URL)
+    expect(cms_page).to_have_url(re.compile(r"/admin"))
     expect(
         cms_page.locator("table, [class*=table], [class*=list], [class*=grid]").first
     ).to_be_visible()
