@@ -14,6 +14,8 @@ def go_to_login(page: Page):
 
 
 # TP-LOGIN-01
+@pytest.mark.cms
+@pytest.mark.smoke
 def test_login_success(page: Page):
     page.goto(CMS_BASE_URL)
     page.get_by_label("Email").fill(CMS_EMAIL)
@@ -23,6 +25,7 @@ def test_login_success(page: Page):
 
 
 # TP-LOGIN-03
+@pytest.mark.cms
 def test_login_wrong_password(page: Page):
     page.goto(CMS_BASE_URL)
     page.get_by_label("Email").fill(CMS_EMAIL)
@@ -32,6 +35,7 @@ def test_login_wrong_password(page: Page):
 
 
 # TP-LOGIN-04
+@pytest.mark.cms
 def test_login_unregistered_email(page: Page):
     page.goto(CMS_BASE_URL)
     page.get_by_label("Email").fill("notexist@example.com")
@@ -41,6 +45,7 @@ def test_login_unregistered_email(page: Page):
 
 
 # TP-LOGIN-05
+@pytest.mark.cms
 def test_login_empty_email(page: Page):
     page.goto(CMS_BASE_URL)
     page.get_by_label("Password").fill(CMS_PASSWORD)
@@ -49,6 +54,7 @@ def test_login_empty_email(page: Page):
 
 
 # TP-LOGIN-06
+@pytest.mark.cms
 def test_login_empty_password(page: Page):
     page.goto(CMS_BASE_URL)
     page.get_by_label("Email").fill(CMS_EMAIL)
