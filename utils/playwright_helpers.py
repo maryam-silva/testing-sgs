@@ -15,3 +15,16 @@ def login_cms(page: Page) -> None:
     page.wait_for_load_state("networkidle")
     # expect keeps retrying until redirect settles — lebih tahan race condition
     expect(page).not_to_have_url(_RE_LOGIN, timeout=15000)
+
+
+def cms_goto(page: Page, url: str, retries: int = 2) -> None:
+    """Navigasi ke URL CMS, retry login jika full-reload redirect balik ke /login
+    (race condition rehydrasi sesi auth setelah hard navigation)."""
+    for _ in range(retries):
+        page.goto(url)
+        page.wait_for_load_state("networkidle")
+        if not _RE_LOGIN.search(page.url):
+            return
+        login_cms(page)
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
