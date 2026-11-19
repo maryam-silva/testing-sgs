@@ -5,6 +5,7 @@ Semua data test berawalan [AUTO] dan dihapus di teardown.
 """
 
 import re
+import time
 from pathlib import Path
 
 import pytest
@@ -20,8 +21,9 @@ ARTICLES_URL = f"{CMS_BASE_URL}/article"
 ARTICLES_ADD_URL = f"{CMS_BASE_URL}/article/create"
 _RE_ARTICLE = re.compile(r"/article")
 
-TITLE = auto("Test Article SGS")
-TITLE_EDITED = auto("Test Article SGS EDITED")
+_RUN_ID = str(int(time.time()))
+TITLE = auto(f"Test Article SGS {_RUN_ID}")
+TITLE_EDITED = auto(f"Test Article SGS EDITED {_RUN_ID}")
 CONTENT = "Ini konten artikel otomatis dari automation test SGS. Jangan hapus manual."
 
 
@@ -106,6 +108,13 @@ def _fill_article_form(page: Page, title: str, content: str = CONTENT, set_inact
     ).or_(
         page.get_by_role("button", name="Simpan")
     ).first.click()
+
+    # Pastikan submit benar-benar selesai (redirect keluar dari /add) sebelum lanjut --
+    # API save bisa lebih lambat dari safe_idle's timeout di bawah resource contention
+    try:
+        expect(page).not_to_have_url(re.compile(r"/add$"), timeout=20000)
+    except AssertionError:
+        pass
     safe_idle(page)
 
 
@@ -121,17 +130,22 @@ def _find_row(page: Page, text: str):
     return page.locator("tr").filter(has_text=text).first
 
 
-def _wait_for_row(page: Page, title: str, attempts: int = 4, delay_ms: int = 1500):
-    """Cari row baru dengan retry+reload -- backend punya sedikit delay indexing
-    setelah create, sehingga row tidak selalu langsung muncul di list pertama kali."""
-    for i in range(attempts):
-        row = _find_row(page, title)
-        if row.count() > 0:
-            return row
-        page.wait_for_timeout(delay_ms)
-        page.reload()
-        safe_idle(page)
-    return _find_row(page, title)
+def _wait_for_row(page: Page, title: str, timeout: int = 45000):
+    """Cari row baru dan tunggu sampai visible dengan timeout panjang. Backend
+    punya delay propagasi data yang signifikan setelah create (terkonfirmasi via
+    network diagnostic -- API create balas 201 sukses tapi search/list API butuh
+    waktu sebelum artikel baru muncul).
+
+    Fill search SEKALI saja lalu biarkan expect() poll live DOM terus-menerus --
+    re-fill search box berulang dengan teks yang SAMA tidak men-trigger fetch baru
+    (React/input tidak re-render kalau value tidak berubah), jadi retry loop yang
+    reset/fill ulang justru tidak efektif dibanding auto-wait native Playwright."""
+    row = _find_row(page, title)
+    try:
+        expect(row).to_be_visible(timeout=timeout)
+    except AssertionError:
+        pass
+    return row
 
 
 def _row_action(page: Page, row, name: str):
