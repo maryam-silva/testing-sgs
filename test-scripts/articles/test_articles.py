@@ -5,12 +5,16 @@ Semua data test berawalan [AUTO] dan dihapus di teardown.
 """
 
 import re
+from pathlib import Path
+
 import pytest
 from playwright.sync_api import Page, expect
 
 from data.cms_data import auto, SAMPLE_ARTICLE
 from data.config import CMS_BASE_URL, WEB_BASE_URL
 from utils.playwright_helpers import cms_goto
+
+TEST_IMAGE = str(Path(__file__).parent.parent.parent / "data" / "assets" / "test-image.jpg")
 
 ARTICLES_URL = f"{CMS_BASE_URL}/article"
 ARTICLES_ADD_URL = f"{CMS_BASE_URL}/article/create"
@@ -44,11 +48,15 @@ def _fill_article_form(page: Page, title: str, content: str = CONTENT, set_inact
     """Isi form artikel dan simpan."""
     page.wait_for_load_state("networkidle")
 
-    # Judul
+    # Gambar (wajib — form menolak submit tanpa image)
+    image_input = page.locator("input[type='file']").first
+    if image_input.count() > 0:
+        image_input.set_input_files(TEST_IMAGE)
+
+    # Judul + konten bahasa Indonesia (default)
     title_input = page.get_by_label("Title", exact=False).first
     title_input.fill(title)
 
-    # Konten (rich text editor atau textarea)
     content_area = page.locator(
         "textarea, [contenteditable='true'], .ql-editor, .tox-edit-area__iframe"
     ).first
@@ -56,29 +64,38 @@ def _fill_article_form(page: Page, title: str, content: str = CONTENT, set_inact
         content_area.click()
         content_area.fill(content)
 
-    # Pilih kategori pertama yang tersedia (jika ada dropdown)
-    cat_select = page.locator("select, [class*=select]").filter(has_text="Kategori").first
-    if cat_select.count() > 0:
-        options = cat_select.locator("option").all()
-        non_empty = [o for o in options if o.get_attribute("value")]
-        if non_empty:
-            non_empty[0].click()
+    # Pilih kategori pertama yang tersedia (Ant Design select combobox)
+    cat_input = page.get_by_label("Category", exact=False).first
+    if cat_input.count() > 0:
+        cat_input.click()
+        option = page.locator(".ant-select-dropdown .ant-select-item-option").first
+        if option.count() > 0:
+            option.click()
+            page.wait_for_timeout(300)
 
-    # Set status inactive supaya tidak tampil di web
+    # Form wajib konten di semua bahasa (ID + EN) -- switch language lalu isi EN juga
+    lang_item = page.locator(".ant-select-selection-item[title='Indonesia (ID)']").first
+    if lang_item.count() > 0:
+        lang_item.click()
+        en_option = page.locator(".ant-select-dropdown .ant-select-item-option", has_text="English").first
+        if en_option.count() > 0:
+            en_option.click()
+            page.wait_for_timeout(300)
+            title_input_en = page.get_by_label("Title", exact=False).first
+            title_input_en.fill(title)
+            content_area_en = page.locator(
+                "textarea, [contenteditable='true'], .ql-editor, .tox-edit-area__iframe"
+            ).first
+            if content_area_en.count() > 0:
+                content_area_en.click()
+                content_area_en.fill(content)
+            page.wait_for_timeout(300)
+
+    # Status adalah radio button (Active/Inactive) -- set inactive supaya tidak tampil di web
     if set_inactive:
-        status_toggle = page.locator(
-            "select[name*=status], input[type='checkbox'][name*=status]"
-        ).first
-        if status_toggle.count() > 0:
-            # dropdown
-            if status_toggle.evaluate("el => el.tagName") == "SELECT":
-                status_toggle.select_option(label="Inactive")
-        else:
-            # cari label "Status" lalu switch/radio
-            status_section = page.locator("label:has-text('Status')").locator("..")
-            inactive_opt = status_section.get_by_text("Inactive", exact=False).first
-            if inactive_opt.count() > 0:
-                inactive_opt.click()
+        inactive_radio = page.locator("input[type='radio'][value='inactive']").first
+        if inactive_radio.count() > 0:
+            inactive_radio.check(force=True)
 
     # Submit
     page.get_by_role("button", name="Save").or_(
@@ -90,27 +107,44 @@ def _fill_article_form(page: Page, title: str, content: str = CONTENT, set_inact
 
 
 def _find_row(page: Page, text: str):
-    """Cari baris tabel yang mengandung text."""
-    return page.locator(f"tr:has-text('{text}')").first
+    """Cari baris tabel yang mengandung text (filter, bukan interpolasi CSS,
+    supaya aman dari title berisi tanda kutip/karakter khusus)."""
+    return page.locator("tr").filter(has_text=text).first
+
+
+def _wait_for_row(page: Page, title: str, attempts: int = 4, delay_ms: int = 1500):
+    """Cari row baru dengan retry+reload -- backend punya sedikit delay indexing
+    setelah create, sehingga row tidak selalu langsung muncul di list pertama kali."""
+    for i in range(attempts):
+        row = _find_row(page, title)
+        if row.count() > 0:
+            return row
+        page.wait_for_timeout(delay_ms)
+        page.reload()
+        page.wait_for_load_state("networkidle")
+    return _find_row(page, title)
+
+
+def _row_action(page: Page, row, name: str):
+    """Klik aksi (Detail/Edit/Archive) dari menu 'more' (⋮) pada baris tabel.
+    UI tidak punya hard-delete -- hanya Archive (soft-delete)."""
+    row.locator(".anticon-more, [aria-label='more']").first.click()
+    page.get_by_role("menuitem", name=name).click()
 
 
 def _cleanup_article(page: Page, title: str):
-    """Hapus artikel berdasarkan judul — dipanggil di teardown."""
+    """Archive artikel berdasarkan judul (soft-delete) — dipanggil di teardown."""
     _go_articles(page)
     row = _find_row(page, title)
     if row.count() == 0:
         return
-    # Klik tombol delete / hapus di baris tersebut
-    row.get_by_role("button", name="Delete").or_(
-        row.get_by_role("button", name="Hapus")
-    ).or_(
-        row.locator("button[aria-label*='delete'], button[aria-label*='Delete']")
-    ).first.click()
-    # Konfirmasi dialog
+    _row_action(page, row, "Archive")
     confirm_btn = page.get_by_role("button", name="Confirm").or_(
         page.get_by_role("button", name="Ya")
     ).or_(
         page.get_by_role("button", name="Yes")
+    ).or_(
+        page.get_by_role("button", name="OK")
     ).first
     if confirm_btn.count() > 0:
         confirm_btn.click()
@@ -143,7 +177,7 @@ def test_create_article(cms_page: Page):
 
     try:
         _go_articles(cms_page)
-        expect(_find_row(cms_page, TITLE)).to_be_visible()
+        expect(_wait_for_row(cms_page, TITLE)).to_be_visible()
     finally:
         _cleanup_article(cms_page, TITLE)
 
@@ -160,11 +194,7 @@ def test_edit_article(cms_page: Page):
     try:
         _go_articles(cms_page)
         row = _find_row(cms_page, TITLE)
-        row.get_by_role("link", name="Edit").or_(
-            row.get_by_role("button", name="Edit")
-        ).or_(
-            row.locator("a[href*='/edit'], button[aria-label*='edit']")
-        ).first.click()
+        _row_action(cms_page, row, "Edit")
         cms_page.wait_for_load_state("networkidle")
 
         # Ubah judul
@@ -187,15 +217,15 @@ def test_edit_article(cms_page: Page):
 
 @pytest.mark.cms
 @pytest.mark.crud
-def test_delete_article(cms_page: Page):
-    """TP-ART-04: Hapus artikel berhasil"""
+def test_archive_article(cms_page: Page):
+    """TP-ART-04: Archive artikel berhasil (tidak ada hard-delete di UI)"""
     # Buat dulu
     _go_articles(cms_page)
     _click_add(cms_page)
     _fill_article_form(cms_page, TITLE)
 
     _go_articles(cms_page)
-    expect(_find_row(cms_page, TITLE)).to_be_visible()
+    expect(_wait_for_row(cms_page, TITLE)).to_be_visible()
 
     _cleanup_article(cms_page, TITLE)
 
@@ -270,7 +300,15 @@ def test_article_active_on_web(cms_page: Page, web_page: Page):
     try:
         web_page.goto(f"{WEB_BASE_URL}/news")
         web_page.wait_for_load_state("networkidle")
-        expect(web_page.get_by_text(TITLE, exact=False)).to_be_visible()
+        article_on_web = web_page.get_by_text(TITLE, exact=False)
+        for _ in range(3):
+            if article_on_web.count() > 0:
+                break
+            web_page.wait_for_timeout(1500)
+            web_page.reload()
+            web_page.wait_for_load_state("networkidle")
+            article_on_web = web_page.get_by_text(TITLE, exact=False)
+        expect(article_on_web).to_be_visible()
     finally:
         _cleanup_article(cms_page, TITLE)
 
