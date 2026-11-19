@@ -2,6 +2,7 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 from data.config import CMS_BASE_URL
+from utils.playwright_helpers import cms_goto
 
 CONTACT_URL = f"{CMS_BASE_URL}/contact"
 
@@ -10,8 +11,7 @@ CONTACT_URL = f"{CMS_BASE_URL}/contact"
 @pytest.mark.smoke
 def test_contact_list_loads(cms_page: Page):
     """TP-CONTACT-01: Halaman Contact (CMS) tampil"""
-    cms_page.goto(CONTACT_URL)
-    cms_page.wait_for_load_state("networkidle")
+    cms_goto(cms_page, CONTACT_URL)
     expect(cms_page).to_have_url(CONTACT_URL)
     expect(
         cms_page.locator("table, [class*=table], [class*=list], [class*=grid], main").first

@@ -4,14 +4,14 @@ from playwright.sync_api import Page, expect
 
 from data.cms_data import auto
 from data.config import CMS_BASE_URL
+from utils.playwright_helpers import cms_goto
 
 CATEGORY_URL = f"{CMS_BASE_URL}/article-category"
 TITLE = auto("Test Category SGS")
 
 
 def _go_categories(page: Page):
-    page.goto(CATEGORY_URL)
-    page.wait_for_load_state("networkidle")
+    cms_goto(page, CATEGORY_URL)
 
 
 def _click_add(page: Page):

@@ -2,6 +2,7 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 from data.config import CMS_BASE_URL
+from utils.playwright_helpers import cms_goto
 
 APP_CONFIG_URL = f"{CMS_BASE_URL}/app-config"
 
@@ -10,8 +11,7 @@ APP_CONFIG_URL = f"{CMS_BASE_URL}/app-config"
 @pytest.mark.smoke
 def test_app_config_loads(cms_page: Page):
     """TP-CONFIG-01: Halaman App Config tampil"""
-    cms_page.goto(APP_CONFIG_URL)
-    cms_page.wait_for_load_state("networkidle")
+    cms_goto(cms_page, APP_CONFIG_URL)
     expect(cms_page).to_have_url(APP_CONFIG_URL)
     expect(
         cms_page.locator("main, [class*=content], form, table").first

@@ -2,6 +2,7 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 from data.config import CMS_BASE_URL
+from utils.playwright_helpers import cms_goto
 
 ADMIN_URL = f"{CMS_BASE_URL}/admin"
 
@@ -10,8 +11,7 @@ ADMIN_URL = f"{CMS_BASE_URL}/admin"
 @pytest.mark.smoke
 def test_admin_list_loads(cms_page: Page):
     """TP-ADMIN-01: Halaman daftar Admin tampil"""
-    cms_page.goto(ADMIN_URL)
-    cms_page.wait_for_load_state("networkidle")
+    cms_goto(cms_page, ADMIN_URL)
     expect(cms_page).to_have_url(ADMIN_URL)
     expect(
         cms_page.locator("table, [class*=table], [class*=list], [class*=grid]").first

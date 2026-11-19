@@ -10,6 +10,7 @@ from playwright.sync_api import Page, expect
 
 from data.cms_data import auto, SAMPLE_ARTICLE
 from data.config import CMS_BASE_URL, WEB_BASE_URL
+from utils.playwright_helpers import cms_goto
 
 ARTICLES_URL = f"{CMS_BASE_URL}/article"
 ARTICLES_ADD_URL = f"{CMS_BASE_URL}/article/create"
@@ -25,8 +26,7 @@ CONTENT = "Ini konten artikel otomatis dari automation test SGS. Jangan hapus ma
 # ---------------------------------------------------------------------------
 
 def _go_articles(page: Page):
-    page.goto(ARTICLES_URL)
-    page.wait_for_load_state("networkidle")
+    cms_goto(page, ARTICLES_URL)
 
 
 def _click_add(page: Page):

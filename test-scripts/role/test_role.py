@@ -2,6 +2,7 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 from data.config import CMS_BASE_URL
+from utils.playwright_helpers import cms_goto
 
 ROLE_URL = f"{CMS_BASE_URL}/role"
 
@@ -10,8 +11,7 @@ ROLE_URL = f"{CMS_BASE_URL}/role"
 @pytest.mark.smoke
 def test_role_list_loads(cms_page: Page):
     """TP-ROLE-01: Halaman daftar Role & Permission tampil"""
-    cms_page.goto(ROLE_URL)
-    cms_page.wait_for_load_state("networkidle")
+    cms_goto(cms_page, ROLE_URL)
     expect(cms_page).to_have_url(ROLE_URL)
     expect(
         cms_page.locator("table, [class*=table], [class*=list], [class*=grid]").first

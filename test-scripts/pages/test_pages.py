@@ -1,6 +1,7 @@
 import pytest
 from playwright.sync_api import Page, expect
 from data.config import CMS_BASE_URL
+from utils.playwright_helpers import cms_goto
 
 PAGES_URL = f"{CMS_BASE_URL}/pages"
 
@@ -9,8 +10,7 @@ PAGES_URL = f"{CMS_BASE_URL}/pages"
 @pytest.mark.smoke
 def test_pages_list_loads(cms_page: Page):
     """TP-PAGES-01: Halaman daftar Pages tampil"""
-    cms_page.goto(PAGES_URL)
-    cms_page.wait_for_load_state("networkidle")
+    cms_goto(cms_page, PAGES_URL)
     expect(cms_page).to_have_url(PAGES_URL)
     expect(
         cms_page.locator("table, [class*=table], [class*=list], [class*=grid]").first
