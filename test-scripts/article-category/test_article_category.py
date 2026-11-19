@@ -4,7 +4,7 @@ from playwright.sync_api import Page, expect
 
 from data.cms_data import auto
 from data.config import CMS_BASE_URL
-from utils.playwright_helpers import cms_goto
+from utils.playwright_helpers import cms_goto, safe_idle
 
 CATEGORY_URL = f"{CMS_BASE_URL}/article-category"
 TITLE = auto("Test Category SGS")
@@ -21,7 +21,7 @@ def _click_add(page: Page):
         "button:has-text('Tambah'), button:has-text('Buat'), "
         "a:has-text('Create'), a:has-text('Add'), a:has-text('Tambah')"
     ).first.click()
-    page.wait_for_load_state("networkidle")
+    safe_idle(page)
 
 
 def _find_row(page: Page, text: str):
@@ -46,7 +46,7 @@ def _cleanup_category(page: Page, title: str):
     ).first
     if confirm_btn.count() > 0:
         confirm_btn.click()
-    page.wait_for_load_state("networkidle")
+    safe_idle(page)
 
 
 @pytest.mark.cms
@@ -66,7 +66,7 @@ def test_create_article_category(cms_page: Page):
     """TP-ARTCAT-02: Buat kategori artikel baru berhasil"""
     _go_categories(cms_page)
     _click_add(cms_page)
-    cms_page.wait_for_load_state("networkidle")
+    safe_idle(cms_page)
 
     name_input = cms_page.get_by_label("Name", exact=False).or_(
         cms_page.get_by_label("Title", exact=False)
@@ -78,7 +78,7 @@ def test_create_article_category(cms_page: Page):
     ).or_(
         cms_page.get_by_role("button", name="Simpan")
     ).first.click()
-    cms_page.wait_for_load_state("networkidle")
+    safe_idle(cms_page)
 
     try:
         _go_categories(cms_page)
@@ -92,7 +92,7 @@ def test_create_article_category_empty_name(cms_page: Page):
     """TP-ARTCAT-03: Simpan kategori tanpa nama gagal"""
     _go_categories(cms_page)
     _click_add(cms_page)
-    cms_page.wait_for_load_state("networkidle")
+    safe_idle(cms_page)
 
     cms_page.get_by_role("button", name="Save").or_(
         cms_page.get_by_role("button", name="Submit")
