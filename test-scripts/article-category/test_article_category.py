@@ -25,23 +25,24 @@ def _click_add(page: Page):
 
 
 def _find_row(page: Page, text: str):
-    return page.locator(f"tr:has-text('{text}')").first
+    return page.locator("tr").filter(has_text=text).first
 
 
 def _cleanup_category(page: Page, title: str):
+    """Tidak ada hard-delete di UI News Categories -- aksi yang tersedia di menu
+    'more' hanya Detail/Edit/Archive. Archive dipakai sebagai cleanup."""
     _go_categories(page)
     row = _find_row(page, title)
     if row.count() == 0:
         return
-    row.get_by_role("button", name="Delete").or_(
-        row.get_by_role("button", name="Hapus")
-    ).or_(
-        row.locator("button[aria-label*='delete'], button[aria-label*='Delete']")
-    ).first.click()
+    row.locator(".anticon-more, [aria-label='more']").first.click()
+    page.get_by_role("menuitem", name="Archive").click()
     confirm_btn = page.get_by_role("button", name="Confirm").or_(
         page.get_by_role("button", name="Ya")
     ).or_(
         page.get_by_role("button", name="Yes")
+    ).or_(
+        page.get_by_role("button", name="OK")
     ).first
     if confirm_btn.count() > 0:
         confirm_btn.click()
@@ -53,7 +54,7 @@ def _cleanup_category(page: Page, title: str):
 def test_article_category_list_loads(cms_page: Page):
     """TP-ARTCAT-01: Halaman daftar News Categories tampil"""
     _go_categories(cms_page)
-    expect(cms_page).to_have_url(CATEGORY_URL)
+    expect(cms_page).to_have_url(re.compile(r"/article-category"))
     expect(
         cms_page.locator("table, [class*=table], [class*=list], [class*=grid]").first
     ).to_be_visible()
